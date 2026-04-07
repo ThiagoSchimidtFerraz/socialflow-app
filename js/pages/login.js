@@ -46,7 +46,7 @@ function renderLoginPage() {
             <div class="login-card">
                 <div class="login-logo">
                     <img src="assets/logo.png" alt="SocialFlow" class="app-logo-login">
-                    <p style="color:var(--gray-50); font-size:14px; font-weight:600; margin-top:-10px; opacity:0.8; letter-spacing:1px; text-transform:uppercase;">Sistema de Gestão 360°</p>
+                    <p style="color:var(--gray-500); font-size:14px; font-weight:700; margin-top:-10px; opacity:1; letter-spacing:1px; text-transform:uppercase;">Sistema de Gestão 360°</p>
                 </div>
 
                 ${loginRoleSelecionado ? renderLoginForm(isPortalCliente) : renderLoginAccessCards()}
