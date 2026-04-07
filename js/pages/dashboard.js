@@ -213,13 +213,12 @@ function renderCronogramaCard(c) {
                 ${!Store.getContaAtiva() && conta ? `
                     <div style="font-size:10px; font-weight:800; color:${conta.cor}; text-transform:uppercase; margin-bottom:4px; letter-spacing:0.05em;">${conta.nome}</div>
                 ` : ''}
-                <div style="font-size:16px; font-weight:700; color:var(--gray-900);">${c.titulo}</div>
+                <div style="font-size:16px; font-weight:700; color:var(--gray-900);">${c.titulo || 'Sem título'}</div>
                 <div class="cronograma-meta" style="margin-top:6px; display:flex; gap:16px; font-size:12px; color:var(--gray-500); font-weight:500;">
                     <span style="display:flex; align-items:center; gap:4px; color:var(--primary); font-weight:700;">
-                        ${Icons.calendar} ${c.previsaoPostagem ? formatDate(c.previsaoPostagem) : formatDate(c.dataInicio)}
+                        ${Icons.calendar} ${c.dataInicio ? formatDate(c.dataInicio) : (c.previsaoPostagem ? formatDate(c.previsaoPostagem) : 'Sem data')}
                     </span>
-                    <span style="display:flex; align-items:center; gap:4px;">${Icons.fileText} ${c.copys.length}</span>
-                    <span style="display:flex; align-items:center; gap:4px;">${Icons.image} ${c.artes.length}</span>
+                    <span style="display:flex; align-items:center; gap:4px;">${Icons.layout} ${(c.posts || []).length} posts</span>
                 </div>
             </div>
             <div style="text-align:right; min-width:140px;">

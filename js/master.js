@@ -623,7 +623,7 @@ const MasterPanel = {
     },
 
     removerUsuario(id) {
-        const success = Store.removerUsuario(id);
+        const success = Store.excluirUsuario(id);
         if (success) {
             closeModal('modal-confirm-del');
             showToast('Usuário removido com sucesso!', 'success');

@@ -33,6 +33,22 @@ const App = {
             const { currentPage, currentUser } = state;
             const app = document.getElementById('app');
             
+            // 1. VERIFICAÇÃO DE INTEGRIDADE (Opção A aprovada)
+            if (state.isMockData && state.cloudError) {
+                app.innerHTML = `
+                    <div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--gray-900); text-align:center; padding:20px;">
+                        <div class="animate-pulse" style="font-size:64px; margin-bottom:24px;">☁️</div>
+                        <h1 style="color:white; margin-bottom:12px;">Conectando com a Nuvem...</h1>
+                        <p style="color:var(--gray-400); max-width:500px; line-height:1.6;">Estamos tentando recuperar seus dados de forma segura. Isso acontece em novos dispositivos ou deploys recentes.</p>
+                        <div style="margin-top:24px; display:flex; gap:12px;">
+                            <button class="btn btn-primary" onclick="window.location.reload()">Tentar Agora</button>
+                        </div>
+                        <p style="margin-top:32px; font-size:12px; color:var(--gray-600);">O sistema está em modo de proteção contra sobrescrita acidental.</p>
+                    </div>
+                `;
+                return;
+            }
+
             const saasConfig = state.saasConfig || { broadcast: { ativa: false }, systemStatus: 'normal' };
             
             // 2. BLOQUEIO DE SEGURANÇA (LOCKDOWN)

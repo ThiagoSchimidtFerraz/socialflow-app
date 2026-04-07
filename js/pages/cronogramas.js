@@ -163,22 +163,29 @@ function abrirModalNovoCronograma() {
     const body = `
         <form id="form-novo-cronograma" onsubmit="criarCronograma(event)">
             <div class="form-group" style="margin-bottom:var(--space-4);">
-                <label class="form-label">Título do Post</label>
-                <input type="text" class="form-input" id="novo-titulo" placeholder="Ex: Campanha de Natal 2026" required>
+                <label class="form-label">Título do Cronograma <span style="color:var(--danger);">*</span></label>
+                <input type="text" class="form-input" id="novo-titulo" placeholder="Ex: Campanha de Abril 2026" required>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--space-3); margin-bottom:var(--space-4);">
+                <div class="form-group">
+                    <label class="form-label">Data de Início <span style="color:var(--danger);">*</span></label>
+                    <input type="date" class="form-input" id="novo-data-inicio" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Data de Fim <span style="color:var(--danger);">*</span></label>
+                    <input type="date" class="form-input" id="novo-data-fim" required>
+                </div>
             </div>
             <div class="form-group" style="margin-bottom:var(--space-4);">
-                <label class="form-label">Data de Previsão de Postagem</label>
-                <input type="date" class="form-input" id="novo-previsao" required>
-            </div>
-            <div class="form-group" style="margin-bottom:var(--space-4);">
-                <label class="form-label">Briefing (Para o Design / Contexto)</label>
-                <textarea class="form-textarea" id="novo-briefing" placeholder="Descreva brevemente a ideia da arte e diretrizes visuais..." rows="2" required></textarea>
-            </div>
-            <div class="form-group" style="margin-bottom:var(--space-4);">
-                <label class="form-label">Legenda (Copy final)</label>
-                <textarea class="form-textarea" id="novo-legenda" placeholder="Texto final que irá para o ar junto com a postagem..." rows="4"></textarea>
+                <label class="form-label">Observações Gerais <small style="color:var(--gray-400); font-weight:400;">(opcional)</small></label>
+                <textarea class="form-textarea" id="novo-briefing" placeholder="Ex: Planejamento de conteúdo para o mês de Abril, foco em lançamento do produto X..." rows="2"></textarea>
             </div>
         </form>
+        <div style="background:var(--primary-50,#eff6ff); border:1px solid var(--primary-200,#bfdbfe); border-radius:var(--radius-md); padding:var(--space-3); margin-top:var(--space-2);">
+            <p style="font-size:12px; color:var(--primary-700,#1d4ed8); margin:0;">
+                💡 <strong>Cronograma</strong> é a estrutura geral do projeto. Depois de criado, você adiciona os <strong>posts individuais</strong> dentro dele com tema, legenda e briefing de arte.
+            </p>
+        </div>
     `;
 
     const footer = `
@@ -195,24 +202,29 @@ function abrirModalNovoCronograma() {
 function criarCronograma(e) {
     e.preventDefault();
     const titulo = document.getElementById('novo-titulo').value.trim();
-    const briefing = document.getElementById('novo-briefing').value.trim();
-    const legenda = document.getElementById('novo-legenda').value.trim();
-    const previsaoPostagem = document.getElementById('novo-previsao').value;
+    const briefing = document.getElementById('novo-briefing')?.value.trim() || '';
+    const dataInicio = document.getElementById('novo-data-inicio').value;
+    const dataFim = document.getElementById('novo-data-fim').value;
 
-    if (!titulo || !previsaoPostagem || !briefing) {
+    if (!titulo || !dataInicio || !dataFim) {
         showToast('Preencha os campos obrigatórios', 'warning');
+        return;
+    }
+
+    if (dataFim < dataInicio) {
+        showToast('A data de fim não pode ser anterior à data de início', 'warning');
         return;
     }
 
     const novo = Store.criarCronograma({ 
         titulo, 
-        briefing, 
-        legenda,
-        previsaoPostagem 
+        briefing,
+        dataInicio,
+        dataFim,
     });
     
     closeModal('modal-novo-cronograma');
-    showToast('Post planejado com sucesso! 🎉', 'success');
+    showToast('Cronograma criado com sucesso! 🎉', 'success');
     
     // Navegar para os detalhes
     setTimeout(() => {

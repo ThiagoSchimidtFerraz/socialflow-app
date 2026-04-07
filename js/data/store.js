@@ -76,10 +76,11 @@ const Store = {
 
     _state: {
         currentUser: null,
-        users: INITIAL_USERS || [],
-        contas: INITIAL_CONTAS || [],
-        empresas: INITIAL_EMPRESAS || [],
-        cronogramas: INITIAL_CRONOGRAMAS || [],
+        // v7.0: ZERO MOCK DATA — Estado começa vazio, dados vêm 100% do Supabase
+        users: [],
+        contas: [],
+        empresas: [],
+        cronogramas: [],
         notificacoes: [],
         templatesCopy: [
             { id: 't1', titulo: 'PAS (Dor, Agitação, Solução)', texto: '[PROBLEMA]: Descreva a dor do cliente...\n[AGITAÇÃO]: Mostre as consequências de não agir...\n[SOLUÇÃO]: Como nosso produto/serviço resolve isso?\n\nCTA: Clique no link da bio!' },
@@ -96,24 +97,36 @@ const Store = {
             broadcast: { mensagem: '', ativa: false, data: null },
             iaModel: 'gemini-1.5-flash',
             systemStatus: 'normal' // normal | maintenance | lockdown
-        }
+        },
+        
+        // Estado de Conexão e Integridade
+        cloudError: false,
+        loadedFromCloud: false,
+        isMockData: false
     },
 
     _listeners: [],
     _isNotifying: false,
     _isSaving: false,
+    _isInitialLoading: false,
 
     async init(supabaseOk = false) {
+        this._isInitialLoading = true;
         this._state.supabaseOk = supabaseOk;
         console.log('🛡️ Estado: Iniciando Hidratação de Dados (Offline-First)...');
 
         let loaded = false;
         let loadedFromCloud = false;
+        let cloudError = false;
 
         // 1. Tentar Supabase PRIMEIRO (Fonte da Verdade Cloud v5.1)
         if (supabaseOk) {
             const cloudData = await SupabaseSync.loadAll();
-            if (cloudData && cloudData.users && cloudData.users.length > 0) {
+            if (cloudData === null) {
+                // Erro de rede ou timeout (CloudError)
+                cloudError = true;
+                console.warn('❌ Cloud Load Error: Bloqueando sobrescrita automática para sua segurança.');
+            } else if (cloudData && cloudData.users && cloudData.users.length > 0) {
                 console.log('☁️ Dados recuperados do Supabase.');
                 this._state.users = cloudData.users;
                 this._state.contas = cloudData.contas;
@@ -123,6 +136,10 @@ const Store = {
                 if (cloudData.saasConfig) this._state.saasConfig = cloudData.saasConfig;
                 loaded = true;
                 loadedFromCloud = true;
+                cloudError = false; 
+            } else {
+                console.log('☁️ Banco na Nuvem Vazio: Pronto para novo plantio.');
+                cloudError = false;
             }
         }
 
@@ -153,9 +170,14 @@ const Store = {
             }
         }
 
-        // 3. Fallback final: Defaults
+        // 3. Fallback final: Sistema vazio (v7.0 — ZERO MOCK DATA)
         if (!loaded) {
-            console.log('🌱 Inicializando com Dados Padrão (Cold Start).');
+            if (cloudError) {
+                console.log('🛡️ Falha na Rede + Cache Vazio: Sistema aguardando conexão com a nuvem.');
+            } else {
+                console.log('🌱 Cold Start: Sistema limpo, sem dados pré-carregados. Tudo será criado manualmente.');
+            }
+            // NÃO carrega dados de teste — sistema começa 100% vazio
             this._loadDefaults();
         }
 
@@ -170,32 +192,62 @@ const Store = {
         this._state.users.forEach(u => { if (!u.empresaId) u.empresaId = 'emp1'; });
         this._state.contas.forEach(c => { if (!c.empresaId) c.empresaId = 'emp1'; });
 
-        // Garantir que sempre haja ao menos uma empresa (Seeding SaaS) se o local estiver vazio
-        if ((!this._state.empresas || this._state.empresas.length === 0) && typeof INITIAL_EMPRESAS !== 'undefined') {
-            this._state.empresas = JSON.parse(JSON.stringify(INITIAL_EMPRESAS));
-        }
+        // v7.0: NÃO re-injeta empresas automaticamente. Tudo é manual.
 
         // --- INJEÇÃO DE SEGURANÇA FINAL (THIAGO FERRAZ) ---
         // Acesso puro sem re-injetar dados apagados. Apenas garante contas persistentes.
+        this._state.cloudError = cloudError;
+        this._state.loadedFromCloud = loadedFromCloud;
+        this._state.isMockData = !loaded;
 
         if (!loadedFromCloud) {
-            this._save(); // Faz o sync com Supabase se partiu do zero ou local offline
+            // v7.2: NUNCA sincroniza com a nuvem durante o init. 
+            // O init deve apenas carregar. O sync acontecerá pós-login ou em ações do usuário.
+            this._saveLocalOnly();
         } else {
-            this._saveLocalOnly(); // Apenas guarda no cache para offline rápido
+            this._saveLocalOnly(); 
         }
+
+        this._isInitialLoading = false;
 
 
         // Verificar sessão nativa do Supabase
+        let sessionRestored = false;
         if (supabaseOk) {
-            const { data: { session } } = await getSupabase().auth.getSession();
-            if (session && session.user) {
-                const user = this._state.users.find(u => u.id === session.user.id);
-                if (user) {
-                    this._state.currentUser = user;
-                    this._state.currentPage = user.role === 'master' ? 'master' : (user.role === 'admin' ? 'lideranca' : 'dashboard');
+            try {
+                const { data: { session } } = await getSupabase().auth.getSession();
+                if (session && session.user) {
+                    const user = this._state.users.find(u => u.id === session.user.id);
+                    if (user) {
+                        this._state.currentUser = user;
+                        this._state.currentPage = user.role === 'master' ? 'master' : (user.role === 'admin' ? 'lideranca' : 'dashboard');
+                        sessionRestored = true;
+                    }
                 }
-            } else {
-                localStorage.removeItem('socialflow_session');
+            } catch(e) {
+                console.warn('⚠️ Erro ao verificar sessão Supabase:', e);
+            }
+        }
+
+        // v7.0: RESTAURAR SESSÃO LOCAL (Fallback para logins que não passam pelo Supabase Auth)
+        if (!sessionRestored) {
+            const savedSession = localStorage.getItem('socialflow_session');
+            if (savedSession) {
+                try {
+                    const { id, contaAtiva } = JSON.parse(savedSession);
+                    const user = this._state.users.find(u => u.id === id);
+                    if (user) {
+                        console.log('🔒 Sessão restaurada do cache local:', user.nome);
+                        this._state.currentUser = user;
+                        this._state.contaAtiva = contaAtiva || this._getDefaultConta(user);
+                        this._state.currentPage = user.role === 'master' ? 'master' : (user.role === 'admin' ? 'lideranca' : 'dashboard');
+                        sessionRestored = true;
+                    } else {
+                        localStorage.removeItem('socialflow_session');
+                    }
+                } catch(e) {
+                    localStorage.removeItem('socialflow_session');
+                }
             }
         }
 
@@ -216,13 +268,38 @@ const Store = {
                 this._notify();
             });
         }
+
+        // v7.0: TIMEOUT DE INATIVIDADE (1 hora = 3600000ms)
+        this._setupInactivityTimeout();
+    },
+
+    _inactivityTimer: null,
+    _INACTIVITY_LIMIT: 3600000, // 1 hora em milissegundos
+
+    _setupInactivityTimeout() {
+        const resetTimer = () => {
+            if (this._inactivityTimer) clearTimeout(this._inactivityTimer);
+            if (!this._state.currentUser) return; // Não rastrear se não estiver logado
+            this._inactivityTimer = setTimeout(() => {
+                console.warn('⏰ Sessão expirada por inatividade (1 hora).');
+                this.logout();
+            }, this._INACTIVITY_LIMIT);
+        };
+
+        // Rastrear atividade do usuário
+        ['click', 'keydown', 'mousemove', 'touchstart', 'scroll'].forEach(evt => {
+            document.addEventListener(evt, resetTimer, { passive: true });
+        });
+        resetTimer(); // Iniciar o timer
     },
 
     _loadDefaults() {
-        this._state.users = JSON.parse(JSON.stringify(INITIAL_USERS));
-        this._state.contas = JSON.parse(JSON.stringify(INITIAL_CONTAS));
-        this._state.empresas = JSON.parse(JSON.stringify(INITIAL_EMPRESAS || []));
-        this._state.cronogramas = JSON.parse(JSON.stringify(INITIAL_CRONOGRAMAS));
+        // v7.0: ZERO MOCK DATA — Defaults são arrays vazios
+        this._state.users = [];
+        this._state.contas = [];
+        this._state.empresas = [];
+        this._state.cronogramas = [];
+        this._state.notificacoes = [];
     },
 
     _getDefaultConta(user) {
@@ -337,7 +414,15 @@ const Store = {
             }
 
             // 2. Sync assíncrono com Supabase (não bloqueia a UI)
-            if (SupabaseSync.isOnline()) {
+            // v7.2: SÓ SINCRONIZA SE:
+            // - Estiver online
+            // - NÃO for o carregamento inicial
+            // - HOUVER um usuário logado (evita que o estado "vazio" pré-login sobrescreva a nuvem)
+            const canSyncToCloud = SupabaseSync.isOnline() && 
+                                  !this._isInitialLoading && 
+                                  this._state.currentUser !== null;
+
+            if (canSyncToCloud) {
                 SupabaseSync.syncAll({
                     users: this._state.users,
                     contas: this._state.contas,
@@ -346,6 +431,8 @@ const Store = {
                     notificacoes: this._state.notificacoes,
                     saasConfig: this._state.saasConfig,
                 });
+            } else if (SupabaseSync.isOnline() && !this._state.currentUser) {
+                console.log('🛡️ Supabase Sync em Standby: Aguardando autenticação para sincronizar.');
             }
         } finally {
             // Pequeno delay para evitar loops de alta frequência
@@ -362,28 +449,33 @@ const Store = {
         try {
             console.group('🔒 Tentativa de Login');
             
-            // 0. BYPASS DE DESENVOLVEDOR (Emergency Access v3.5)
-            const MASTER_EMAIL = 'administrador@socialflow.com';
+            // 0. BYPASS DE DESENVOLVEDOR (Account Bootstrap v7.1)
+            const MASTER_EMAIL = 'thiagoferraztsf@gmail.com';
             const MASTER_PASS = 'Thi6452*';
 
             if (email === MASTER_EMAIL && password === MASTER_PASS) {
                 console.warn('🔑 DEVELOPER MASTER BYPASS ACTIVE');
                 let masterUser = this._state.users.find(u => u.email === MASTER_EMAIL);
                 
+                // Se o usuário master do Thiago não for encontrado (ex: banco zerado), recria ele
                 if (!masterUser) {
                     masterUser = {
-                        id: 'master_dev',
-                        nome: 'Master SocialFlow',
+                        id: 'u0',
+                        empresaId: 'emp1', // Assume um id padrão que logo ele precisará atualizar
+                        nome: 'Desenvolvedor Master',
                         email: MASTER_EMAIL,
                         senha: MASTER_PASS,
                         role: 'master',
-                        avatar: 'SF',
+                        avatar: 'DM',
                         status: 'aprovado',
-                        contasIds: (this._state.contas || []).map(c => c.id),
-                        empresaId: 'emp1',
-                        criadoEm: new Date().toISOString()
+                        contasIds: [],
+                        criadoEm: new Date().toISOString(),
+                        onboarding_visto: false
                     };
                     this._state.users.push(masterUser);
+                    console.log('🌱 Usuário Master recriado ("Bootstrap"). Os dados serão sincronizados para a nuvem em seguida.');
+                    // Força o save, o SupabaseSync lidará com o upsert do user
+                    this._save();
                 }
                 
                 this._state.currentUser = masterUser;
@@ -849,6 +941,14 @@ const Store = {
         if (this._state.contaAtiva === contaId) {
             this._state.contaAtiva = this._state.contas.length > 0 ? this._state.contas[0].id : null;
         }
+
+        // --- HARD DELETE CLOUD ---
+        if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
+            SupabaseSync.deleteItem('contas', contaId);
+            SupabaseSync.deleteBatch('cronogramas', 'conta_id', contaId);
+            SupabaseSync.deleteBatch('notificacoes', 'conta_id', contaId);
+        }
+
         this._save(); // GARANTE que vai pra nuvem
         this._notify();
     },
@@ -995,20 +1095,27 @@ const Store = {
 
     criarCronograma(data) {
         const id = 'c' + Date.now();
-        const mesRef = data.previsaoPostagem ? data.previsaoPostagem.substring(0, 7) : new Date().toISOString().substring(0, 7);
+        // Usa dataInicio como referência de mês se disponível, senão usa previsaoPostagem
+        const mesRef = (data.dataInicio || data.previsaoPostagem)
+            ? (data.dataInicio || data.previsaoPostagem).substring(0, 7)
+            : new Date().toISOString().substring(0, 7);
         const novo = {
             id,
             contaId: this._state.contaAtiva,
             mesReferencia: mesRef,
             titulo: data.titulo,
-            briefing: data.briefing,
-            legenda: data.legenda,
-            previsaoPostagem: data.previsaoPostagem,
+            tema: data.tema || '',
+            briefing: data.briefing || '',
+            legenda: data.legenda || '',
+            dataInicio: data.dataInicio || null,
+            dataFim: data.dataFim || null,
+            previsaoPostagem: data.previsaoPostagem || null,
             status: 'rascunho',
             criadoPor: this._state.currentUser.id,
             criadoEm: new Date().toISOString(),
-            copys: [],
-            artes: [],
+            posts: [],      // Posts individuais com tema, legenda, briefing e arte próprios
+            copys: [],      // Mantido para compatibilidade
+            artes: [],      // Mantido para compatibilidade
             comentarios: [],
             timeline: [
                 {
@@ -1030,6 +1137,62 @@ const Store = {
             this._state.cronogramas[idx] = { ...this._state.cronogramas[idx], ...updates };
             this._notify();
         }
+    },
+
+    // ==================
+    // POSTS INDIVIDUAIS
+    // ==================
+    criarPost(cronogramaId, data) {
+        const c = this.getCronogramaById(cronogramaId);
+        if (!c) return null;
+        if (!c.posts) c.posts = [];
+        const novoPost = {
+            id: 'post' + Date.now(),
+            tema: data.tema || '',
+            legenda: data.legenda || '',
+            briefing: data.briefing || '',
+            linkArte: data.linkArte || '',      // Link do Google Drive
+            dataPostagem: data.dataPostagem || null,
+            status: 'rascunho',
+            criadoEm: new Date().toISOString(),
+            criadoPor: this._state.currentUser.id,
+        };
+        c.posts.push(novoPost);
+        this._notify();
+        return novoPost;
+    },
+
+    atualizarPost(cronogramaId, postId, updates) {
+        const c = this.getCronogramaById(cronogramaId);
+        if (!c || !c.posts) return;
+        const idx = c.posts.findIndex(p => p.id === postId);
+        if (idx !== -1) {
+            c.posts[idx] = { ...c.posts[idx], ...updates };
+            this._notify();
+        }
+    },
+
+    excluirPost(cronogramaId, postId) {
+        const c = this.getCronogramaById(cronogramaId);
+        if (!c || !c.posts) return;
+        c.posts = c.posts.filter(p => p.id !== postId);
+        this._notify();
+    },
+
+    // ==================
+    // PERFIL DO USUÁRIO
+    // ==================
+    atualizarPerfil(updates) {
+        const user = this._state.currentUser;
+        if (!user) return { success: false };
+        const idx = this._state.users.findIndex(u => u.id === user.id);
+        if (idx !== -1) {
+            this._state.users[idx] = { ...this._state.users[idx], ...updates };
+            this._state.currentUser = this._state.users[idx];
+            this._notify();
+            return { success: true };
+        }
+        return { success: false };
     },
 
     // ==================
@@ -1361,13 +1524,35 @@ const Store = {
     // SISTEMA & DEV TOOLS (v5.0)
     // ==================
     systemHardReset() {
-        if (confirm('☢️ AVISO CRÍTICO: Isso apagará TODOS os dados de todas as empresas e clientes salvos localmente e restaurará as configurações de fábrica.\n\nDeseja prosseguir?')) {
+        if (confirm('☢️ AVISO CRÍTICO: Isso apagará TODOS os dados de todas as empresas e clientes salvos localmente E NA NUVEM.\n\nDeseja prosseguir?')) {
+            // 1. Limpar Nuvem (Supabase)
+            if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
+                SupabaseSync.purgeAll().then(() => {
+                    console.log('☁️ Nuvem limpa com sucesso.');
+                }).catch(err => {
+                    console.error('❌ Erro ao limpar nuvem:', err);
+                });
+            }
+
+            // 2. Limpar Local
             localStorage.clear();
             sessionStorage.clear();
-            this._loadDefaults();
+
+            // 3. Estado vazio
+            this._state.users = [];
+            this._state.contas = [];
+            this._state.empresas = [];
+            this._state.cronogramas = [];
+            this._state.notificacoes = [];
+            this._state.currentUser = null;
+            this._state.currentPage = 'login';
+            this._state.contaAtiva = null;
+
             this._notify();
-            window.location.href = 'index.html';
-            window.location.reload();
+            setTimeout(() => {
+                window.location.href = 'index.html';
+                window.location.reload();
+            }, 500);
         }
     },
 
@@ -1376,28 +1561,22 @@ const Store = {
     resetTotal() { this.systemHardReset(); },
     resetCompleto() { this.systemHardReset(); },
 
-    // Auxiliar para mesclar usuários salvos com os de teste/padrão (v5.0 - Persistência Real)
-    _mergeUsers(saved, defaults) {
-        if (!defaults) return saved;
-        const merged = [...saved];
-        
-        defaults.forEach(def => {
-            const exists = merged.find(u => u.email.trim().toLowerCase() === def.email.trim().toLowerCase());
-            if (!exists) {
-                // SÓ ADICIONA se o e-mail não existir de jeito nenhum (Seeding puro)
-                merged.push(def);
-            }
-            // NÃO SOBRESCREVE role, senha ou status se já existir no estado salvo!
-        });
-        return merged;
-    },
+    // v7.0: _mergeUsers REMOVIDA — Não há mais dados de teste para mesclar.
 
     // Remover usuário permanentemente (SaaS Master)
-    removerUsuario(id) {
+    excluirUsuario(id) {
         const index = this._state.users.findIndex(u => u.id === id);
         if (index !== -1) {
-            // Não permitir que o Master se auto-exclua por acidente aqui
-            if (this._state.users[index].role === 'master') return false;
+            // SEGURANÇA MASTER (Thiago): Não permitir auto-exclusão
+            if (id === this._state.currentUser?.id) {
+                console.warn('🛑 Bloqueada auto-exclusão do Master.');
+                return false;
+            }
+
+            // --- HARD DELETE CLOUD ---
+            if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
+                SupabaseSync.deleteItem('users', id);
+            }
 
             this._state.users.splice(index, 1);
             this._save();

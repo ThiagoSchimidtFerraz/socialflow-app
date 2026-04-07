@@ -6,13 +6,23 @@ let adminTab = 'pendentes';
 
 function renderAdminPage() {
     const user = Store.getState().currentUser;
-    if (!user || (user.role !== 'admin' && user.role !== 'master')) {
+    if (!user || (user.role !== 'admin' && user.role !== 'master' && user.role !== 'social_media')) {
         Store.navigate('dashboard');
         return '';
     }
 
-    const pendentes = Store.getUsuariosPendentes();
-    const todosUsuarios = Store.getTodosUsuarios();
+    // Se for Social Media e estiver numa aba proibida, forçar 'contas'
+    if (user.role === 'social_media' && adminTab !== 'contas') {
+        adminTab = 'contas';
+    }
+
+    const pendentesRaw = Store.getUsuariosPendentes();
+    const todosUsuariosRaw = Store.getTodosUsuarios();
+    
+    // FILTRO DE GOVERNANÇA (Thiago): Administradores não veem Master
+    const pendentes = user.role === 'master' ? pendentesRaw : pendentesRaw.filter(u => u.role !== 'master');
+    const todosUsuarios = user.role === 'master' ? todosUsuariosRaw : todosUsuariosRaw.filter(u => u.role !== 'master');
+    
     const contas = Store.getContas();
 
     return `
@@ -23,8 +33,8 @@ function renderAdminPage() {
                     <h1>${(user.role === 'admin' || user.role === 'master') ? 'Painel Administrativo' : 'Gestão de Configurações'}</h1>
                     <p class="page-header-subtitle">${(user.role === 'admin' || user.role === 'master') ? 'Gerencie usuários, aprovações e contas de clientes' : 'Gerencie as contas ativas do fluxo'}</p>
                 </div>
-                <div style="display:flex; gap:var(--space-3);">
-                    ${pendentes.length > 0 && (user.role === 'admin' || user.role === 'master') ? `
+                <div style="display:flex; gap:var(--space-3); align-items:center;">
+                    ${(user.role === 'admin' || user.role === 'master') && pendentes.length > 0 ? `
                         <span class="badge badge-aguardando" style="font-size:var(--font-sm); padding:6px 16px;">
                             ${pendentes.length} pendente(s)
                         </span>
@@ -155,9 +165,16 @@ function renderAdminUsuarios(usuarios) {
                                     }
                                 </td>
                                 <td>
-                                    <button class="btn btn-ghost btn-sm" onclick="abrirModalVincularContas('${u.id}')">
-                                        ${Icons.edit} Contas
-                                    </button>
+                                    <div style="display:flex; gap:var(--space-1);">
+                                        <button class="btn btn-ghost btn-sm" onclick="abrirModalVincularContas('${u.id}')" title="Gerenciar Contas">
+                                            ${Icons.edit}
+                                        </button>
+                                        ${(Store.getState().currentUser.role === 'master' || (u.role !== 'admin' && u.role !== 'master')) ? `
+                                            <button class="btn btn-ghost btn-sm text-danger" onclick="adminExcluirUsuario('${u.id}', '${u.nome}')" title="Excluir Usuário">
+                                                ${Icons.trash || Icons.x}
+                                            </button>
+                                        ` : ''}
+                                    </div>
                                 </td>
                             </tr>
                         `;
@@ -202,9 +219,13 @@ function renderAdminContas(contas) {
                                 <div style="font-size:var(--font-xs); color:var(--gray-500);">Membros</div>
                             </div>
                             <div style="margin-left:auto; display:flex; align-items:flex-end;">
-                                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); confirmarExcluirConta('${conta.id}', '${conta.nome}')" title="Excluir conta">
-                                    ${Icons.trash || Icons.x} Excluir
-                                </button>
+                                ${Store.getState().currentUser.role !== 'social_media' ? `
+                                    <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); confirmarExcluirConta('${conta.id}', '${conta.nome}')" title="Excluir conta">
+                                        ${Icons.trash || Icons.x} Excluir
+                                    </button>
+                                ` : `
+                                    <span style="font-size:10px; color:var(--gray-400); font-weight:600; text-transform:uppercase;">Somente Leitura / Criação</span>
+                                `}
                             </div>
                         </div>
                     </div>
@@ -230,6 +251,20 @@ function adminRejeitarUsuario(userId) {
     if (confirm('Tem certeza que deseja rejeitar este cadastro?')) {
         Store.rejeitarUsuario(userId);
         showToast('Cadastro rejeitado.', 'warning');
+    }
+}
+
+function adminExcluirUsuario(userId, nome) {
+    const user = Store.getState().currentUser;
+    if (userId === user.id) {
+        showToast('Você não pode se auto-excluir!', 'danger');
+        return;
+    }
+
+    if (confirm(`⚠️ ATENÇÃO: Deseja remover permanentemente o acesso de "${nome}"?\n\nEsta ação não pode ser desfeita.`)) {
+        Store.excluirUsuario(userId);
+        showToast('Usuário removido com sucesso.', 'success');
+        App.render();
     }
 }
 

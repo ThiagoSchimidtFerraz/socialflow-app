@@ -63,11 +63,12 @@ const SupabaseSync = {
         try {
             const sb = getSupabase();
 
-            const [usersRes, contasRes, cronosRes, notifsRes] = await Promise.all([
+            const [usersRes, contasRes, cronosRes, notifsRes, empresasRes] = await Promise.all([
                 sb.from('users').select('*'),
                 sb.from('contas').select('*'),
                 sb.from('cronogramas').select('*').order('criado_em', { ascending: false }),
                 sb.from('notificacoes').select('*').order('criado_em', { ascending: false }),
+                sb.from('empresas').select('*'),
             ]);
 
             if (usersRes.error || contasRes.error || cronosRes.error || notifsRes.error) {
@@ -80,8 +81,9 @@ const SupabaseSync = {
             const contas = (contasRes.data || []).map(this._mapContaFromDB);
             const cronogramas = (cronosRes.data || []).map(this._mapCronogramaFromDB);
             const notificacoes = (notifsRes.data || []).map(this._mapNotificacaoFromDB);
+            const empresas = (empresasRes.data || []).map(this._mapEmpresaFromDB);
 
-            return { users, contas, cronogramas, notificacoes };
+            return { users, contas, cronogramas, notificacoes, empresas };
         } catch (err) {
             console.warn('📴 Falha ao carregar do Supabase:', err);
             return null;
@@ -92,22 +94,98 @@ const SupabaseSync = {
      * Sincroniza todo o estado atual com o Supabase (upsert)
      */
     async syncAll(state) {
-        if (!this.isOnline()) return;
+        if (!this.isOnline()) return false;
+        
+        // --- BLINDAGEM DE SEGURANÇA (v7.2) ---
+        // Se o estado estiver vazio (especialmente usuários), ABORTAR o sync para evitar sobrescrita acidental.
+        if (!state || !state.users || state.users.length === 0) {
+            console.warn('🛡️ SyncAll ABORTADO: Estado vazio detectado. Protegendo integridade da nuvem.');
+            return false;
+        }
 
         try {
             const sb = getSupabase();
 
-            // Upsert em paralelo
-            await Promise.all([
+            const results = await Promise.allSettled([
                 this._syncUsers(sb, state.users),
                 this._syncContas(sb, state.contas),
                 this._syncCronogramas(sb, state.cronogramas),
                 this._syncNotificacoes(sb, state.notificacoes || []),
+                this._syncEmpresas(sb, state.empresas || []),
             ]);
 
-            console.log('☁️ Sync concluído');
+            const failed = results.filter(r => r.status === 'rejected' || (r.value && r.value.error));
+            if (failed.length > 0) {
+                console.error('❌ Sync FALHOU em', failed.length, 'tabelas. Dados podem não ter sido salvos na nuvem!');
+                return false;
+            }
+
+            console.log('☁️ Sync concluído com sucesso (' + (state.users?.length || 0) + ' users, ' + (state.empresas?.length || 0) + ' empresas)');
+            return true;
         } catch (err) {
-            console.warn('⚠️ Falha no sync:', err);
+            console.error('❌ FALHA CRÍTICA no sync:', err);
+            return false;
+        }
+    },
+
+    /**
+     * v7.0: PURGE TOTAL — Exclui TODOS os dados de TODAS as tabelas no Supabase.
+     * Uso exclusivo do Master para começar do zero.
+     */
+    async purgeAll() {
+        if (!this.isOnline()) return false;
+        try {
+            const sb = getSupabase();
+            console.warn('💣 PURGE TOTAL: Limpando TODAS as tabelas do Supabase...');
+
+            // Ordem importa por causa de foreign keys
+            await sb.from('cronogramas').delete().neq('id', '__impossible__');
+            await sb.from('notificacoes').delete().neq('id', '__impossible__');
+            await sb.from('contas').delete().neq('id', '__impossible__');
+            await sb.from('users').delete().neq('id', '__impossible__');
+            await sb.from('empresas').delete().neq('id', '__impossible__');
+
+            console.log('✅ PURGE TOTAL concluído. Supabase está limpo.');
+            return true;
+        } catch (err) {
+            console.error('❌ Erro no purge:', err);
+            return false;
+        }
+    },
+
+    /**
+     * Exclui um item específico de uma tabela no Supabase
+     */
+    async deleteItem(table, id) {
+        if (!this.isOnline()) return;
+        try {
+            const { error } = await getSupabase()
+                .from(table)
+                .delete()
+                .eq('id', id);
+            
+            if (error) throw error;
+            console.log(`🗑️ Item ${id} removido da tabela ${table} na nuvem.`);
+        } catch (err) {
+            console.warn(`⚠️ Erro ao deletar na nuvem (${table}):`, err.message);
+        }
+    },
+
+    /**
+     * Exclui múltiplos itens de uma tabela no Supabase baseados em um campo
+     */
+    async deleteBatch(table, field, value) {
+        if (!this.isOnline()) return;
+        try {
+            const { error } = await getSupabase()
+                .from(table)
+                .delete()
+                .eq(field, value);
+            
+            if (error) throw error;
+            console.log(`🗑️ Lote removido da tabela ${table} (${field}=${value}) na nuvem.`);
+        } catch (err) {
+            console.warn(`⚠️ Erro ao deletar lote na nuvem (${table}):`, err.message);
         }
     },
 
@@ -140,6 +218,13 @@ const SupabaseSync = {
         if (error) console.warn('Sync notificacoes error:', error.message);
     },
 
+    async _syncEmpresas(sb, empresas) {
+        if (!empresas || empresas.length === 0) return;
+        const rows = empresas.map(this._mapEmpresaToDB);
+        const { error } = await sb.from('empresas').upsert(rows, { onConflict: 'id' });
+        if (error) console.warn('Sync empresas error:', error.message);
+    },
+
     // ==================
     // MAPPERS: Store → DB
     // ==================
@@ -147,10 +232,14 @@ const SupabaseSync = {
     _mapUserToDB(u) {
         return {
             id: u.id,
+            empresa_id: u.empresaId || u.empresa_id || null,
             nome: u.nome,
             email: u.email,
             senha: u.senha,
             role: u.role,
+            avatar: u.avatar || '',
+            status: u.status || 'aprovado',
+            contas_ids: u.contasIds || [],
             criado_em: u.criadoEm || new Date().toISOString(),
         };
     },
@@ -158,6 +247,7 @@ const SupabaseSync = {
     _mapContaToDB(c) {
         return {
             id: c.id,
+            empresa_id: c.empresaId || c.empresa_id || null,
             nome: c.nome,
             cor: c.cor || '#4F46E5',
             codigo_convite: c.codigoConvite || null,
@@ -173,9 +263,11 @@ const SupabaseSync = {
             titulo: c.titulo,
             descricao: c.descricao || '',
             data_inicio: c.dataInicio || null,
+            data_fim: c.dataFim || null,
             status: c.status || 'rascunho',
             criado_por: c.criadoPor || null,
             criado_em: c.criadoEm || new Date().toISOString(),
+            posts: JSON.stringify(c.posts || []),
             copys: JSON.stringify(c.copys || []),
             artes: JSON.stringify(c.artes || []),
             comentarios: JSON.stringify(c.comentarios || []),
@@ -205,12 +297,13 @@ const SupabaseSync = {
     _mapUserFromDB(row) {
         return {
             id: row.id,
+            empresaId: row.empresa_id || null,
             nome: row.nome,
             email: row.email,
             senha: row.senha,
             role: row.role,
             avatar: row.avatar || '',
-            status: row.status || 'pendente',
+            status: row.status || 'aprovado',
             contasIds: row.contas_ids || [],
             empresaNome: row.empresa_nome || null,
             criadoEm: row.criado_em,
@@ -220,6 +313,7 @@ const SupabaseSync = {
     _mapContaFromDB(row) {
         return {
             id: row.id,
+            empresaId: row.empresa_id || null,
             nome: row.nome,
             cor: row.cor || '#4F46E5',
             codigoConvite: row.codigo_convite || null,
@@ -257,6 +351,27 @@ const SupabaseSync = {
             deUserId: row.de_user_id,
             paraRole: row.para_role,
             lida: row.lida || false,
+            criadoEm: row.criado_em,
+        };
+    },
+
+    // EMPRESAS MAPPERS
+    _mapEmpresaToDB(e) {
+        return {
+            id: e.id,
+            nome: e.nome,
+            plano: e.plano || 'basic',
+            status: e.status || 'ativo',
+            criado_em: e.criadoEm || new Date().toISOString(),
+        };
+    },
+
+    _mapEmpresaFromDB(row) {
+        return {
+            id: row.id,
+            nome: row.nome,
+            plano: row.plano || 'basic',
+            status: row.status || 'ativo',
             criadoEm: row.criado_em,
         };
     },

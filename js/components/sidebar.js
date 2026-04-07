@@ -23,6 +23,7 @@ function renderSidebar(activePage) {
         menuItems = [
             { id: 'dashboard', label: 'Operação de Conteúdo', icon: Icons.edit },
             { id: 'cronogramas', label: 'Todos os Cronogramas', icon: Icons.calendar },
+            { id: 'admin', label: 'Contas de Clientes', icon: Icons.users },
             { id: 'historico', label: 'Arquivo Geral', icon: Icons.archive },
         ];
     } else if (user.role === 'admin') {
@@ -145,7 +146,7 @@ function renderSidebar(activePage) {
             ` : ''}
 
             <div class="sidebar-footer" style="border:none; margin-top:auto;">
-                <div class="sidebar-user">
+                <div class="sidebar-user" onclick="abrirModalPerfil()" style="cursor:pointer;" title="Meu Perfil">
                     ${renderAvatar(user)}
                     <div class="sidebar-user-info">
                         <div class="sidebar-user-name">${user.nome}</div>

@@ -418,3 +418,95 @@ document.addEventListener('DOMContentLoaded', () => {
         if (el) el.style.background = SupabaseSync.isOnline() ? 'var(--success)' : 'var(--warning)';
     }, 5000);
 });
+
+// ====================================
+// GESTÃO DE PERFIL (FOTO E SENHA)
+// ====================================
+
+window.abrirModalPerfil = function() {
+    const user = Store.getState().currentUser;
+    if (!user) return;
+
+    const body = `
+        <div style="text-align:center; margin-bottom:var(--space-6);">
+            <div id="perfil-avatar-preview" style="width:80px; height:80px; border-radius:50%; background:var(--gray-100); display:flex; align-items:center; justify-content:center; font-size:40px; margin:0 auto 12px; border:4px solid white; box-shadow:var(--shadow-md);">
+                ${user.avatar}
+            </div>
+            <p style="font-size:12px; color:var(--gray-500);">Clique nos ícones abaixo para mudar seu avatar</p>
+            <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-top:12px; max-width:240px; margin-left:auto; margin-right:auto;">
+                ${['👤', '👨‍💻', '👩‍💻', '🎨', '🚀', '⭐', '📱', '📈', '✨', '🔥'].map(emoji => `
+                    <button class="btn-icon" onclick="selecionarEmojiPerfil('${emoji}')" style="font-size:20px; background:var(--white); border:1px solid var(--gray-100);">${emoji}</button>
+                `).join('')}
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:var(--space-4);">
+            <label class="form-label">Nome Completo</label>
+            <input type="text" id="perfil-nome" class="form-input" value="${user.nome || ''}" placeholder="Seu nome">
+        </div>
+
+        <div class="form-group" style="margin-bottom:var(--space-4);">
+            <label class="form-label">E-mail</label>
+            <input type="email" class="form-input" value="${user.email || ''}" disabled style="background:var(--gray-50); cursor:not-allowed;">
+            <small style="color:var(--gray-400); font-size:11px;">O e-mail não pode ser alterado.</small>
+        </div>
+
+        <div style="padding-top:var(--space-4); border-top:1px solid var(--gray-100); margin-top:var(--space-4);">
+            <h4 style="font-size:14px; margin-bottom:12px;">Alterar Senha</h4>
+            <div class="form-group" style="margin-bottom:var(--space-3);">
+                <label class="form-label">Nova Senha</label>
+                <input type="password" id="perfil-senha" class="form-input" placeholder="Deixe em branco para não alterar">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Confirmar Nova Senha</label>
+                <input type="password" id="perfil-senha-conf" class="form-input" placeholder="Repita a nova senha">
+            </div>
+        </div>
+    `;
+
+    const footer = `
+        <button class="btn btn-secondary" onclick="closeModal('modal-perfil')">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarSalvarPerfil()">Salvar Alterações</button>
+    `;
+
+    window._tempAvatar = user.avatar;
+    showModal('modal-perfil', 'Meu Perfil', body, footer);
+};
+
+window.selecionarEmojiPerfil = function(emoji) {
+    window._tempAvatar = emoji;
+    const preview = document.getElementById('perfil-avatar-preview');
+    if (preview) preview.innerHTML = emoji;
+};
+
+window.confirmarSalvarPerfil = function() {
+    const nome = document.getElementById('perfil-nome').value.trim();
+    const senha = document.getElementById('perfil-senha').value;
+    const senhaConf = document.getElementById('perfil-senha-conf').value;
+
+    if (!nome) {
+        showToast('O nome é obrigatório', 'warning');
+        return;
+    }
+
+    if (senha && senha !== senhaConf) {
+        showToast('As senhas não conferem', 'warning');
+        return;
+    }
+
+    const updates = {
+        nome,
+        avatar: window._tempAvatar
+    };
+
+    if (senha) updates.password = senha;
+
+    const res = Store.atualizarPerfil(updates);
+    if (res.success) {
+        showToast('Perfil atualizado com sucesso!', 'success');
+        closeModal('modal-perfil');
+        App.render();
+    } else {
+        showToast('Erro ao atualizar perfil', 'danger');
+    }
+};
