@@ -549,6 +549,11 @@ window.abrirModalNovaArte = function(cronogramaId) {
                 <option value="mp4">MP4 (Vídeo)</option>
             </select>
         </div>
+        <div class="form-group" style="margin-top:var(--space-3);">
+            <label class="form-label">Arquivo da Arte (Opcional)</label>
+            <input type="file" id="arte-arquivo" class="form-input" accept="image/*,video/mp4">
+            <small style="color:var(--gray-500); font-size:11px; display:block; margin-top:4px;">Upload direto para o Cloudflare R2 (10GB Livres)</small>
+        </div>
     `;
     const footer = `
         <button class="btn btn-secondary" onclick="closeModal('modal-arte')">Cancelar</button>
@@ -557,11 +562,34 @@ window.abrirModalNovaArte = function(cronogramaId) {
     showModal('modal-arte', 'Adicionar Arte', body, footer);
 };
 
-window.confirmarNovaArte = function(id) {
+window.confirmarNovaArte = async function(id) {
     const nome = document.getElementById('arte-nome').value.trim();
     const tipo = document.getElementById('arte-tipo').value;
+    const arquivoInput = document.getElementById('arte-arquivo');
+    
     if (!nome) return alert('Digite o nome da arte');
-    Store.adicionarArte(id, { nome, tipo });
+    
+    let linkArte = '';
+    
+    // Se houver um arquivo selecionado, faz o upload para o R2 primeiro
+    if (arquivoInput.files && arquivoInput.files[0]) {
+        try {
+            const btn = document.querySelector('#modal-arte .btn-primary');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '📤 Enviando...';
+            btn.disabled = true;
+            
+            linkArte = await R2Service.upload(arquivoInput.files[0]);
+            
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        } catch (err) {
+            alert('Erro no upload para o Cloudflare R2: ' + err.message);
+            return;
+        }
+    }
+
+    Store.adicionarArte(id, { nome, tipo, linkArte });
     closeModal('modal-arte');
     App.render();
 };

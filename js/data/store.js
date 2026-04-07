@@ -1289,6 +1289,7 @@ const Store = {
                 id: 'a' + Date.now(),
                 nome: arte.nome,
                 tipo: arte.tipo,
+                linkArte: arte.linkArte || null,
                 preview: arte.preview || null,
                 status: 'pendente', // Aprovação granular
                 feedback: null,
