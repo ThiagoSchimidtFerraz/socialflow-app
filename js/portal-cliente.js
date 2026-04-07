@@ -91,6 +91,11 @@ const PortalCliente = {
                     </div>
                 </header>
                 ${contentHtml}
+
+                <!-- Assinatura Thiago Schimidt -->
+                <div style="position:fixed; bottom:12px; right:20px; font-size:9px; color:var(--gray-400); opacity:0.4; z-index:9999; pointer-events:none; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">
+                    Desenvolvido por Thiago Schimidt
+                </div>
             </div>
         `;
         

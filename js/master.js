@@ -83,9 +83,11 @@ const MasterPanel = {
                         ${this._renderNavLink('Métricas', 'metricas')}
                         ${this._renderNavLink('Empresas', 'empresas')}
                         ${this._renderNavLink('Usuários', 'usuarios')}
+                        ${this._renderNavLink('Feedback', 'feedback')}
+                        ${this._renderNavLink('Saúde', 'saude')}
+                        ${this._renderNavLink('IA', 'ia')}
                         ${this._renderNavLink('Sistema', 'sistema')}
                         ${this._renderNavLink('Faturamento', 'faturamento')}
-                        ${this._renderNavLink('Comunicação', 'comunicacao')}
                         ${this._renderNavLink('Auditoria', 'auditoria')}
                     </nav>
                     <button class="btn btn-danger btn-sm" onclick="MasterPanel.logout()">Sair</button>
@@ -94,6 +96,11 @@ const MasterPanel = {
                 <main style="flex:1; padding: var(--space-8); max-width: 1400px; margin: 0 auto; width:100%;">
                     ${this._renderActiveTab()}
                 </main>
+
+                <!-- Assinatura Thiago Schimidt -->
+                <div style="position:fixed; bottom:12px; right:24px; font-size:9px; color:var(--gray-600); opacity:0.4; z-index:9999; pointer-events:none; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">
+                    Desenvolvido por Thiago Schimidt
+                </div>
             </div>
         `;
     },
@@ -108,6 +115,9 @@ const MasterPanel = {
             case 'metricas': return this._renderMetrics();
             case 'empresas': return this._renderEmpresas();
             case 'usuarios': return this._renderUsuarios();
+            case 'feedback': return this._renderFeedback();
+            case 'saude': return this._renderSaude();
+            case 'ia': return this._renderIAUsage();
             case 'sistema': return this._renderSistema();
             case 'faturamento': return this._renderFaturamento();
             case 'comunicacao': return this._renderComunicacao();
@@ -172,9 +182,9 @@ const MasterPanel = {
                 ${logs.length > 0 ? logs.map(log => Security.html`
                     <div style="padding:16px 0; border-bottom:1px solid var(--gray-800); display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <span style="color:var(--primary); font-weight:700; font-size:11px; display:block; text-transform:uppercase;">${log.contaNome}</span>
+                            <span style="color:var(--primary); font-weight:700; font-size:11px; display:block; text-transform:uppercase;">${log.contaNome || 'Sistema'}</span>
                             <span style="color:white; font-weight:500; font-size:14px;">${log.acao}</span>
-                            <span style="color:var(--gray-500); font-size:12px; margin-left:8px;">em "${log.cronogramaTitulo}"</span>
+                            <span style="color:var(--gray-500); font-size:12px; margin-left:8px;">${log.cronogramaTitulo ? `em "${log.cronogramaTitulo}"` : ''}</span>
                         </div>
                         <div style="color:var(--gray-600); font-size:12px; text-align:right;">
                             ${formatDateRelative(log.data)}
@@ -212,8 +222,8 @@ const MasterPanel = {
             <div class="card" style="background:var(--gray-800); border:1px solid var(--gray-700); opacity:${emp.status === 'ativo' ? 1 : 0.7}; transition:all 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--gray-700)'">
                 <div style="padding:20px; border-bottom:1px solid var(--gray-700); display:flex; justify-content:space-between; align-items:center;">
                     <div>
-                        <h3 style="color:white; font-size:18px; font-weight:700; margin:0;">${emp.nome}</h3>
-                        <div style="font-size:10px; color:var(--gray-500); text-transform:uppercase;">ID: ${emp.id}</div>
+                        <h3 style="color:white; font-size:18px; font-weight:700; margin:0;">${emp.nome || 'Empresa Sem Nome'}</h3>
+                        <div style="font-size:10px; color:var(--gray-500); text-transform:uppercase;">ID: ${emp.id || '—'}</div>
                     </div>
                     <div style="text-align:right;">
                         <span style="font-size:10px; padding:2px 8px; border-radius:20px; border:1px solid ${color}; color:${color}; font-weight:700;">${emp.status.toUpperCase()}</span>
@@ -269,8 +279,8 @@ const MasterPanel = {
                                         <div style="display:flex; align-items:center; gap:12px;">
                                             <div style="width:32px; height:32px; border-radius:50%; background:var(--primary); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;">${u.avatar}</div>
                                             <div>
-                                                <span style="font-weight:600; display:block;">${u.nome}</span>
-                                                <span style="font-size:11px; color:var(--gray-500);">${u.email}</span>
+                                                <span style="font-weight:600; display:block;">${u.nome || 'Usuário'}</span>
+                                                <span style="font-size:11px; color:var(--gray-500);">${u.email || 'sem-email'}</span>
                                             </div>
                                         </div>
                                     </td>
@@ -463,6 +473,13 @@ const MasterPanel = {
         
         const target = users[0];
         if (confirm(`Shadow Login como [${target.nome}]? Todas as suas ações serão logadas.`)) {
+            // Log de Auditoria Master (v4.0)
+            Store.logAudit('Shadow Login', { 
+                targetId: target.id, 
+                targetNome: target.nome, 
+                empresaId 
+            });
+
             Store._state.currentUser = target;
             Store._state.currentPage = 'lideranca';
             Store._notify();
@@ -920,6 +937,125 @@ const MasterPanel = {
         reader.readAsText(file);
         // Reset do input
         event.target.value = '';
+    },
+
+    // ====================================
+    // TELEMETRIA & FEEDBACK (v4.0)
+    // ====================================
+    
+    _renderSaude() {
+        const errors = Store.getState().errorLogs || [];
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:32px;">
+                <h2 style="color:white; font-size:24px; font-weight:800;">Monitor de Saúde Técnica</h2>
+                <div style="font-size:12px; color:var(--gray-500);">Últimos 100 erros detectados no ecossistema.</div>
+            </div>
+
+            <div class="card" style="background:var(--gray-900); border:1px solid var(--gray-800); overflow:hidden;">
+                ${errors.length > 0 ? `
+                    <table style="width:100%; border-collapse:collapse; color:var(--gray-300); font-size:12px;">
+                        <thead>
+                            <tr style="background:var(--gray-800); text-align:left; color:white;">
+                                <th style="padding:16px;">Data/Hora</th>
+                                <th style="padding:16px;">Usuário</th>
+                                <th style="padding:16px;">Mensagem de Erro</th>
+                                <th style="padding:16px;">Local (URL)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${errors.map(err => Security.html`
+                                <tr style="border-bottom:1px solid var(--gray-800); font-family:monospace;">
+                                    <td style="padding:12px 16px; color:var(--gray-500); white-space:nowrap;">${formatDateRelative(err.data)}</td>
+                                    <td style="padding:12px 16px; color:var(--primary);">${err.user || 'Visitante/Sistema'}</td>
+                                    <td style="padding:12px 16px;"><span style="color:var(--danger); font-weight:700;">${err.message || 'Erro Desconhecido'}</span></td>
+                                    <td style="padding:12px 16px; color:var(--gray-600); max-width:200px; overflow:hidden; text-overflow:ellipsis;">${err.url || '—'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                ` : `
+                    <div style="padding:48px; text-align:center; color:var(--gray-500);">
+                        <div style="font-size:48px; margin-bottom:16px;">✨</div>
+                        <p>Nenhum erro técnico detectado recentemente. Sistema 100% estável.</p>
+                    </div>
+                `}
+            </div>
+        `;
+    },
+
+    _renderFeedback() {
+        const feedback = Store.getGlobalFeedback();
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:32px;">
+                <h2 style="color:white; font-size:24px; font-weight:800;">Mural de Feedback Global</h2>
+                <div style="font-size:12px; color:var(--gray-500);">Agregação de todos os comentários dos clientes nas aprovações.</div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap:20px;">
+                ${feedback.length > 0 ? feedback.map(f => Security.html`
+                    <div class="card" style="background:var(--gray-900); padding:20px; border:1px solid var(--gray-800);">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
+                            <span style="font-size:10px; font-weight:800; color:var(--primary); text-transform:uppercase;">${f.contaNome}</span>
+                            <span style="font-size:10px; color:var(--gray-600);">${formatDateRelative(f.data)}</span>
+                        </div>
+                        <p style="color:white; font-size:14px; line-height:1.6; margin-bottom:12px;">"${f.detalhes}"</p>
+                        <div style="border-top:1px solid var(--gray-800); padding-top:12px; font-size:11px; color:var(--gray-500);">
+                            Evento: <b>${f.acao}</b> em <i>${f.cronogramaTitulo}</i>
+                        </div>
+                    </div>
+                `).join('') : `
+                    <div style="grid-column:1/-1; padding:48px; text-align:center; color:var(--gray-500);">
+                        <p>Ainda não há feedbacks ou comentários processados.</p>
+                    </div>
+                `}
+            </div>
+        `;
+    },
+
+    _renderIAUsage() {
+        const usage = Store.getState().iaUsage || {};
+        const empresas = Store.getEmpresas();
+
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:32px;">
+                <h2 style="color:white; font-size:24px; font-weight:800;">Gestor de Tokens IA</h2>
+                <div style="font-size:12px; color:var(--gray-500);">Monitoramento de custos e consumo por agência.</div>
+            </div>
+
+            <div class="card" style="background:var(--gray-900); padding:24px; border:1px solid var(--gray-800);">
+                <table style="width:100%; border-collapse:collapse; color:white; font-size:14px;">
+                    <thead>
+                        <tr style="background:var(--gray-800); text-align:left;">
+                            <th style="padding:16px;">Agência</th>
+                            <th style="padding:16px;">Consumo de Tokens</th>
+                            <th style="padding:16px;">Chamadas</th>
+                            <th style="padding:16px;">Última Atividade</th>
+                            <th style="padding:16px; text-align:right;">Estimativa de Custo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${empresas.map(emp => {
+                            const data = usage[emp.id] || { tokens: 0, totalChamadas: 0, ultimaAtividade: '—' };
+                            const costEst = (data.tokens / 1000 * 0.01).toFixed(4); // Ex: $0.01 por 1k tokens
+                            return `
+                                <tr style="border-bottom:1px solid var(--gray-800);">
+                                    <td style="padding:16px; font-weight:700;">${emp.nome}</td>
+                                    <td style="padding:16px;">
+                                        <div style="font-size:16px; font-weight:800;">${data.tokens.toLocaleString()} t</div>
+                                        <div style="font-size:10px; color:var(--gray-500);">Tokens consumidos</div>
+                                    </td>
+                                    <td style="padding:16px;">${data.totalChamadas}</td>
+                                    <td style="padding:16px; color:var(--gray-500); font-size:12px;">${data.ultimaAtividade !== '—' ? formatDateRelative(data.ultimaAtividade) : '—'}</td>
+                                    <td style="padding:16px; text-align:right;">
+                                        <span class="badge badge-success">$ ${costEst}</span>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
     }
 };
 

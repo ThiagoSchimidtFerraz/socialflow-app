@@ -218,14 +218,15 @@ function renderAdminContas(contas) {
                                 <div style="font-size:var(--font-2xl); font-weight:800; color:var(--gray-900);">${usuariosCount}</div>
                                 <div style="font-size:var(--font-xs); color:var(--gray-500);">Membros</div>
                             </div>
-                            <div style="margin-left:auto; display:flex; align-items:flex-end;">
+                            <div style="margin-left:auto; display:flex; align-items:center; gap:var(--space-2); align-items:flex-end;">
+                                <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); abrirModalEditarConta('${conta.id}')" title="Editar conta">
+                                    ${Icons.edit} Editar
+                                </button>
                                 ${Store.getState().currentUser.role !== 'social_media' ? `
                                     <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); confirmarExcluirConta('${conta.id}', '${conta.nome}')" title="Excluir conta">
                                         ${Icons.trash || Icons.x} Excluir
                                     </button>
-                                ` : `
-                                    <span style="font-size:10px; color:var(--gray-400); font-weight:600; text-transform:uppercase;">Somente Leitura / Criação</span>
-                                `}
+                                ` : ''}
                             </div>
                         </div>
                     </div>
@@ -276,9 +277,14 @@ function abrirModalNovaConta() {
                 <input type="text" class="form-input" id="conta-nome" placeholder="Ex: Loja Fashion, Restaurante XYZ..." required>
             </div>
             <div class="form-group" style="margin-bottom:var(--space-4);">
-                <label class="form-label">E-mail de Acesso (Para o Cliente)</label>
+                <label class="form-label">E-mail Principal (Login do Cliente)</label>
                 <input type="email" class="form-input" id="conta-email" placeholder="cliente@marca.com">
-                <p style="font-size:11px; color:var(--gray-400); margin-top:4px;">Se preenchido, cria automaticamente o usuário do Cliente vinculado a esta conta com senha "123".</p>
+                <p style="font-size:10px; color:var(--gray-400); margin-top:4px;">Cria automaticamente um acesso com senha "123".</p>
+            </div>
+            <div class="form-group" style="margin-bottom:var(--space-4);">
+                <label class="form-label">E-mails p/ Notificação (Opcional)</label>
+                <input type="text" class="form-input" id="conta-emails-extras" placeholder="socio@marca.com, marketing@marca.com">
+                <p style="font-size:10px; color:var(--gray-400); margin-top:4px;">Separe por vírgula. Usado para cópias de avisos de aprovação.</p>
             </div>
             <div class="form-group">
                 <label class="form-label">Cor de identificação</label>
@@ -316,12 +322,14 @@ function criarNovaConta(e) {
     e.preventDefault();
     const nome = document.getElementById('conta-nome').value.trim();
     const cor = document.getElementById('conta-cor').value;
-    const emailCliente = document.getElementById('conta-email').value.trim();
+    const emailCliente = document.getElementById('conta-email').value.trim().toLowerCase();
+    const emailsExtras = document.getElementById('conta-emails-extras').value.trim();
+    
     if (!nome) {
         showToast('Digite o nome da conta', 'warning');
         return;
     }
-    Store.criarConta({ nome, cor, emailCliente });
+    Store.criarConta({ nome, cor, emailCliente, emailsExtras });
     closeModal('modal-nova-conta');
     showToast('Conta criada com sucesso! 🎉', 'success');
 }
@@ -374,4 +382,57 @@ function confirmarExcluirConta(contaId, contaNome) {
         Store.excluirConta(contaId);
         showToast(`Conta "${contaNome}" excluída com sucesso! 🗑️`, 'warning');
     }
+}
+
+// ---- Edição de Conta ----
+
+function abrirModalEditarConta(contaId) {
+    const conta = Store.getContaById(contaId);
+    if (!conta) return;
+
+    const body = `
+        <form id="form-editar-conta" onsubmit="confirmarEditarConta(event, '${contaId}')">
+            <div class="form-group" style="margin-bottom:var(--space-4);">
+                <label class="form-label">Nome da Conta / Marca</label>
+                <input type="text" class="form-input" id="edit-conta-nome" value="${conta.nome}" required>
+            </div>
+            <div class="form-group" style="margin-bottom:var(--space-4);">
+                <label class="form-label">E-mail Principal (Login)</label>
+                <input type="email" class="form-input" id="edit-conta-email" value="${conta.emailCliente || ''}" placeholder="cliente@marca.com">
+                <p style="font-size:10px; color:var(--gray-400); margin-top:4px;">Nota: Alterar este e-mail não altera o login se o usuário já existir.</p>
+            </div>
+            <div class="form-group" style="margin-bottom:var(--space-4);">
+                <label class="form-label">E-mails p/ Notificação</label>
+                <input type="text" class="form-input" id="edit-conta-emails-extras" value="${conta.emailsExtras || ''}" placeholder="socio@marca.com, marketing@marca.com">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Cor de identificação</label>
+                <div style="display:flex; gap:var(--space-2); flex-wrap:wrap; margin-top:var(--space-2);">
+                    ${['#4F46E5','#7C3AED','#EC4899','#EF4444','#F59E0B','#10B981','#3B82F6','#14B8A6','#D97706','#6366F1'].map(cor => `
+                        <div class="color-picker-item ${conta.cor === cor ? 'selected' : ''}" style="background:${cor};" onclick="selecionarCorConta(this, '${cor}')" data-cor="${cor}"></div>
+                    `).join('')}
+                </div>
+                <input type="hidden" id="edit-conta-cor" value="${conta.cor}">
+            </div>
+        </form>
+    `;
+    const footer = `
+        <button class="btn btn-secondary" onclick="closeModal('modal-editar-conta')">Cancelar</button>
+        <button class="btn btn-primary" onclick="document.getElementById('form-editar-conta').requestSubmit()">
+            ${Icons.check} Salvar Alterações
+        </button>
+    `;
+    showModal('modal-editar-conta', 'Editar Conta', body, footer);
+}
+
+function confirmarEditarConta(e, contaId) {
+    e.preventDefault();
+    const nome = document.getElementById('edit-conta-nome').value.trim();
+    const emailCliente = document.getElementById('edit-conta-email').value.trim().toLowerCase();
+    const emailsExtras = document.getElementById('edit-conta-emails-extras').value.trim();
+    const cor = document.getElementById('edit-conta-cor').value;
+
+    Store.editarConta(contaId, { nome, emailCliente, emailsExtras, cor });
+    closeModal('modal-editar-conta');
+    showToast('Conta atualizada com sucesso! ✨', 'success');
 }

@@ -114,6 +114,26 @@ function renderLiderancaPage() {
                     </div>
                 </div>
 
+                <!-- HEATMAP & EFICIÊNCIA (v4.0) -->
+                <div style="display:grid; grid-template-columns: 1.5fr 1fr; gap:32px; margin-bottom:32px;">
+                    <section>
+                        <h2 class="dashboard-section-title">
+                            ${Icons.activity || '⚡'} Heatmap de Atividade (Últimos 30 dias)
+                        </h2>
+                        <div class="card" style="padding:24px; background:var(--white);">
+                            ${renderActivityHeatmap()}
+                        </div>
+                    </section>
+                    <section>
+                        <h2 class="dashboard-section-title">
+                            ${Icons.award || '🏆'} Ranking de Eficiência Operacional
+                        </h2>
+                        <div class="card" style="padding:0; overflow:hidden;">
+                            ${renderEfficiencyLeaderboard(allCronogramas)}
+                        </div>
+                    </section>
+                </div>
+
                 <!-- PERFORMANCE INDIVIDUAL POR PROFISSIONAL -->
                 <section style="margin-bottom:var(--space-8);">
                     <h2 class="dashboard-section-title animate-fade-in" style="font-size:16px; font-weight:800; color:var(--gray-900); margin-bottom:var(--space-4);">
@@ -265,10 +285,10 @@ function renderLiderancaPage() {
                                             <div class="timeline-item">
                                                 <div class="timeline-dot dot-${a.tipo}"></div>
                                                 <div class="timeline-content">
-                                                    <strong>${a.acao}</strong>
+                                                    <strong>${a.acao || 'Ação'}</strong>
                                                     <div style="font-size:var(--font-xs); color:var(--gray-500); margin-top:2px;">
-                                                        <span class="admin-conta-tag" style="background:${a.contaCor}20; color:${a.contaCor}; border:1px solid ${a.contaCor}40;">${a.contaNome}</span>
-                                                        ${a.cronogramaTitulo} · ${u ? u.nome : ''}
+                                                        <span class="admin-conta-tag" style="background:${a.contaCor || '#eee'}20; color:${a.contaCor || '#666'}; border:1px solid ${a.contaCor || '#666'}40;">${a.contaNome || 'Sistema'}</span>
+                                                        ${a.cronogramaTitulo || 'Geral'} · ${u ? u.nome : 'Sistema'}
                                                     </div>
                                                     <div class="timeline-time">${formatDateRelative(a.data)}</div>
                                                 </div>
@@ -977,3 +997,115 @@ window.handleCriarMembro = function() {
         showToast(res.error, 'danger');
     }
 };
+
+// ====================================
+// NOVAS FUNÇÕES DE INTELIGÊNCIA (v4.0)
+// ====================================
+
+function renderActivityHeatmap() {
+    const data = Store.getHeatmapData();
+    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const hours = Array.from({length: 12}, (_, i) => (i * 2) + ':00'); // Step of 2 hours for compactness
+
+    let html = `
+        <div class="heatmap-container" style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; gap:8px; padding-left:40px; margin-bottom:8px;">
+                ${hours.map(h => `<div style="flex:1; font-size:9px; color:var(--gray-400); text-align:center;">${h}</div>`).join('')}
+            </div>
+    `;
+
+    days.forEach((day, dIdx) => {
+        html += `
+            <div style="display:flex; align-items:center; gap:8px;">
+                <div style="width:32px; font-size:10px; font-weight:700; color:var(--gray-500);">${day}</div>
+                <div style="flex:1; display:flex; gap:4px; height:24px;">
+                    ${Array.from({length: 12}).map((_, hBlock) => {
+                        const count1 = data[`${dIdx}_${hBlock * 2}`] || 0;
+                        const count2 = data[`${dIdx}_${hBlock * 2 + 1}`] || 0;
+                        const total = count1 + count2;
+                        
+                        let opacity = 0.05;
+                        if (total > 10) opacity = 0.9;
+                        else if (total > 5) opacity = 0.6;
+                        else if (total > 2) opacity = 0.3;
+                        else if (total > 0) opacity = 0.15;
+
+                        return `<div style="flex:1; background:var(--primary); opacity:${opacity}; border-radius:4px;" title="${total} ações neste período"></div>`;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    });
+
+    html += `
+            <div style="margin-top:16px; display:flex; justify-content:flex-end; align-items:center; gap:8px; font-size:10px; color:var(--gray-400);">
+                <span>Menos</span>
+                <div style="width:12px; height:12px; background:var(--primary); opacity:0.1; border-radius:2px;"></div>
+                <div style="width:12px; height:12px; background:var(--primary); opacity:0.4; border-radius:2px;"></div>
+                <div style="width:12px; height:12px; background:var(--primary); opacity:0.7; border-radius:2px;"></div>
+                <div style="width:12px; height:12px; background:var(--primary); opacity:1; border-radius:2px;"></div>
+                <span>Mais atividade</span>
+            </div>
+        </div>
+    `;
+    return html;
+}
+
+function renderEfficiencyLeaderboard(cronos) {
+    const users = Store.getTodosUsuarios().filter(u => u.role === 'social_media' || u.role === 'designer');
+    const ranking = users.map(u => {
+        const myCronos = cronos.filter(c => 
+            c.criadoPor === u.id || 
+            c.timeline.some(t => t.userId === u.id)
+        );
+        const resolved = myCronos.filter(c => ['aprovado', 'agendado', 'concluido'].includes(c.status)).length;
+        const total = myCronos.length;
+        const efficiency = total > 0 ? Math.round((resolved / total) * 100) : 0;
+        
+        return { 
+            nome: u.nome, 
+            avatar: u.avatar, 
+            role: u.role, 
+            efficiency, 
+            resolved, 
+            total 
+        };
+    }).sort((a, b) => b.efficiency - a.efficiency || b.resolved - a.resolved);
+
+    return `
+        <table style="width:100%; border-collapse:collapse; font-size:13px; color:var(--gray-700);">
+            <thead>
+                <tr style="background:var(--gray-50); text-align:left; border-bottom:1px solid var(--gray-100);">
+                    <th style="padding:12px 16px;">Profissional</th>
+                    <th style="padding:12px 16px;">Eficiência</th>
+                    <th style="padding:12px 16px; text-align:right;">Concluídos</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${ranking.map((r, i) => `
+                    <tr style="border-bottom:1px solid var(--gray-50);">
+                        <td style="padding:12px 16px;">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <div style="font-size:11px; font-weight:800; color:var(--gray-300); width:14px;">${i+1}</div>
+                                <div style="width:28px; height:28px; border-radius:50%; background:var(--primary-100); color:var(--primary-700); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800;">${r.avatar || '👤'}</div>
+                                <div>
+                                    <div style="font-weight:700;">${r.nome || 'Usuário'}</div>
+                                    <div style="font-size:9px; color:var(--gray-400); text-transform:uppercase;">${(r.role || '').replace('_', ' ')}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="padding:12px 16px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <div style="flex:1; height:4px; background:var(--gray-100); border-radius:2px; max-width:60px;">
+                                    <div style="width:${r.efficiency}%; height:100%; background:${r.efficiency > 80 ? 'var(--success)' : (r.efficiency > 50 ? 'var(--warning)' : 'var(--danger)')}; border-radius:2px;"></div>
+                                </div>
+                                <b style="color:var(--gray-900);">${r.efficiency}%</b>
+                            </div>
+                        </td>
+                        <td style="padding:12px 16px; text-align:right; font-weight:800; color:var(--gray-900);">${r.resolved}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}

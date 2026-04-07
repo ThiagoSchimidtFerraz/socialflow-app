@@ -7,6 +7,20 @@ const AIService = {
     getApiKey: () => Store.getGeminiKey(),
 
     /**
+     * Estima o uso de tokens e registra no Store (v4.0)
+     */
+    _trackUsage(prompt, responseText) {
+        const empresa = Store.getEmpresaAtiva();
+        if (!empresa) return;
+        
+        // Estimativa conservadora: 4 caracteres = 1 token
+        const totalChars = (prompt || '').length + (responseText || '').length;
+        const estimatedTokens = Math.ceil(totalChars / 4);
+        
+        Store.trackIAUsage(empresa.id, estimatedTokens);
+    },
+
+    /**
      * Gera um diagnóstico estratégico baseado nos KPIs da conta
      */
     async analisarSaudeConta(conta, kpis) {
@@ -49,8 +63,9 @@ const AIService = {
             return data.candidates[0].content.parts[0].text;
             */
 
-            // Simulando resposta enquanto não há chave válida ou para demonstração
-            return this.gerarMockDiagnostico(conta, kpis);
+            const text = this.gerarMockDiagnostico(conta, kpis);
+            this._trackUsage(prompt, text);
+            return text;
         } catch (error) {
             console.error('Erro na AI:', error);
             throw new Error('Falha ao conectar com o Gemini. Verifique sua chave e conexão.');
@@ -129,6 +144,7 @@ Regras:
 
             if (data.candidates && data.candidates[0]) {
                 const textBot = data.candidates[0].content.parts[0].text;
+                this._trackUsage(JSON.stringify(payload), textBot);
                 // Salvar resposta do bot no histórico
                 this._chatHistory.push({
                     role: "model",
@@ -230,7 +246,9 @@ Regras:
 
             const data = await response.json();
             if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts.length > 0) {
-                return data.candidates[0].content.parts[0].text.trim();
+                const textOut = data.candidates[0].content.parts[0].text.trim();
+                this._trackUsage(prompt, textOut);
+                return textOut;
             } else {
                 return "Desculpe, a IA não conseguiu formular uma resposta no momento.";
             }

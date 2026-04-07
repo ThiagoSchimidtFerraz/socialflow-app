@@ -2,6 +2,20 @@
 // SOCIALFLOW — App (Roteador Principal)
 // ====================================
 
+// --- MONITOR DE SAÚDE TÉCNICA (v4.0) ---
+window.onerror = function(message, source, lineno, colno, error) {
+    if (typeof Store !== 'undefined' && Store.logError) {
+        Store.logError(error || message);
+    }
+    return false;
+};
+
+window.onunhandledrejection = function(event) {
+    if (typeof Store !== 'undefined' && Store.logError) {
+        Store.logError(`Promise Rejection: ${event.reason}`);
+    }
+};
+
 const App = {
     async init() {
         // Redirecionamento básico se necessário, mas não bloqueia a inicialização
@@ -108,6 +122,12 @@ const App = {
                     console.warn('⚠️ Página desconhecida, redirecionando para Dashboard:', currentPage);
                     html = renderDashboard();
             }
+
+            html += `
+                <div style="position:fixed; bottom:12px; right:20px; font-size:9px; color:var(--gray-500); opacity:0.4; z-index:9999; pointer-events:none; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">
+                    Desenvolvido por Thiago Schimidt
+                </div>
+            `;
 
             app.innerHTML = html;
             window.scrollTo(0, 0);

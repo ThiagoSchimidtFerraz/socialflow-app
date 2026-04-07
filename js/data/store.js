@@ -98,6 +98,11 @@ const Store = {
             iaModel: 'gemini-1.5-flash',
             systemStatus: 'normal' // normal | maintenance | lockdown
         },
+
+        // --- SISTEMA DE TELEMETRIA & AUDITORIA (v4.0) ---
+        auditLogs: [],   // Registros de Shadow Login e ações críticas
+        errorLogs: [],   // Captura de falhas no navegador
+        iaUsage: {},     // Consumo de tokens { empresaId: { tokens: 123, ultimaData: '...' } }
         
         // Estado de Conexão e Integridade
         cloudError: false,
@@ -926,6 +931,24 @@ const Store = {
         return novaConta;
     },
 
+    editarConta(id, updates) {
+        const idx = this._state.contas.findIndex(c => c.id === id);
+        if (idx !== -1) {
+            this._state.contas[idx] = { ...this._state.contas[idx], ...updates };
+            
+            // Registrar auditoria se for uma mudança crítica (v4.1)
+            this.logAudit(`Conta "${this._state.contas[idx].nome}" atualizada`, {
+                contaId: id,
+                camposAlterados: Object.keys(updates)
+            });
+
+            this._save();
+            this._notify();
+            return true;
+        }
+        return false;
+    },
+
     excluirConta(contaId) {
         // Remover a conta
         this._state.contas = this._state.contas.filter(c => c.id !== contaId);
@@ -1646,4 +1669,89 @@ const Store = {
         }
         return false;
     },
+
+    // ====================================
+    // TELEMETRIA & AUDITORIA (v4.0)
+    // ====================================
+
+    logAudit(acao, detalhes = {}) {
+        const user = this._state.currentUser;
+        const log = {
+            id: 'log_' + Date.now(),
+            data: new Date().toISOString(),
+            userId: user ? user.id : 'sistema',
+            userNome: user ? user.nome : 'Sistema',
+            acao,
+            detalhes
+        };
+        if (!this._state.auditLogs) this._state.auditLogs = [];
+        this._state.auditLogs.unshift(log);
+        if (this._state.auditLogs.length > 200) this._state.auditLogs.pop();
+        this._notify();
+    },
+
+    logError(error) {
+        const log = {
+            id: 'err_' + Date.now(),
+            data: new Date().toISOString(),
+            message: error.message || error,
+            stack: error.stack || '',
+            url: window.location.href,
+            user: this._state.currentUser ? this._state.currentUser.email : 'anônimo'
+        };
+        if (!this._state.errorLogs) this._state.errorLogs = [];
+        this._state.errorLogs.unshift(log);
+        if (this._state.errorLogs.length > 100) this._state.errorLogs.pop();
+        this._notify();
+    },
+
+    trackIAUsage(empresaId, tokens) {
+        if (!this._state.iaUsage) this._state.iaUsage = {};
+        if (!this._state.iaUsage[empresaId]) {
+            this._state.iaUsage[empresaId] = { tokens: 0, totalChamadas: 0 };
+        }
+        this._state.iaUsage[empresaId].tokens += tokens;
+        this._state.iaUsage[empresaId].totalChamadas += 1;
+        this._state.iaUsage[empresaId].ultimaAtividade = new Date().toISOString();
+        this._notify();
+    },
+
+    getGlobalFeedback() {
+        const feedback = [];
+        this._state.cronogramas.forEach(c => {
+            const conta = this.getContaById(c.contaId);
+            c.timeline.forEach(t => {
+                const isFeedback = t.acao.toLowerCase().includes('comentário') || 
+                                 t.acao.toLowerCase().includes('aprovou') || 
+                                 t.acao.toLowerCase().includes('revisão');
+                if (isFeedback && t.detalhes) {
+                    feedback.push({
+                        ...t,
+                        contaNome: conta ? conta.nome : '—',
+                        cronogramaTitulo: c.titulo
+                    });
+                }
+            });
+        });
+        return feedback.sort((a, b) => new Date(b.data) - new Date(a.data)).slice(0, 50);
+    },
+
+    getHeatmapData(empresaId) {
+        const heatmap = {};
+        const cronos = empresaId 
+            ? this._state.cronogramas.filter(cr => {
+                const conta = this.getContaById(cr.contaId);
+                return conta && conta.empresaId === empresaId;
+              })
+            : this._state.cronogramas;
+
+        cronos.forEach(c => {
+            c.timeline.forEach(t => {
+                const d = new Date(t.data);
+                const k = `${d.getDay()}_${d.getHours()}`;
+                heatmap[k] = (heatmap[k] || 0) + 1;
+            });
+        });
+        return heatmap;
+    }
 };
