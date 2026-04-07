@@ -1,0 +1,7 @@
+.DS_Store
+.gemini/
+node_modules/
+.env
+dist/
+/socialflow-final-security-fix.zip
+/socialflow-v7-2.zip
