@@ -444,6 +444,21 @@ const Store = {
                                   !this._isInitialLoading && 
                                   this._state.currentUser !== null;
 
+            // --- TRAVA DE SEGURANÇA FINAL (ANTI-OVERWRITE v7.0) ---
+            // Se a nuvem retornar vazio MAS o local tem dados, verificamos se foi uma limpeza intencional
+            if (this._state.empresas.length === 0 && localData.empresas.length > 0) {
+                const lastReset = localStorage.getItem('socialflow_last_reset');
+                // Se não houve um reset manual recente, protegemos o dado local contra falha de rede/nuvem vazia
+                if (!lastReset || (Date.now() - parseInt(lastReset)) > 5000) {
+                    console.warn('🛡️ ALERTA DE ANTI-OVERWRITE: Bloqueado overwite para salvar os dados locais!');
+                    this._state.users = localData.users;
+                    this._state.contas = localData.contas;
+                    this._state.empresas = localData.empresas;
+                    this._state.cronogramas = localData.cronogramas;
+                    this._state.notificacoes = localData.notificacoes;
+                }
+            }
+
             // --- TRAVA DE SEGURANÇA CRÍTICA (v5.5 - THIAGO) ---
             // Se tentarmos sincronizar um estado "vazio" (sem usuários ou contas) 
             // mas o sistema NÃO foi identificado como um "Cold Start" legítimo, BLOQUEAMOS.
@@ -632,10 +647,26 @@ const Store = {
             return false;
         }
 
+        // --- HARD DELETE CLOUD ---
+        if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
+            SupabaseSync.deleteItem('users', userId);
+        }
+
         this._state.users = this._state.users.filter(u => u.id !== userId);
         this._save();
         this._notify();
         return true;
+    },
+
+    excluirConta(id) {
+        // --- HARD DELETE CLOUD ---
+        if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
+            SupabaseSync.deleteItem('contas', id);
+        }
+
+        this._state.contas = this._state.contas.filter(c => c.id !== id);
+        this._save();
+        this._notify();
     },
 
     getUsuariosPendentes() {
@@ -843,14 +874,32 @@ const Store = {
         return false;
     },
 
-    excluirEmpresa(empresaId) {
-        // Segurança: Impedir exclusão de dados ativos se necessário (ou limpar tudo)
+    async excluirEmpresa(empresaId) {
+        console.log(`🗑️ Iniciando exclusão atômica da empresa: ${empresaId}`);
+        
+        // 1. Remover do estado local IMEDIATAMENTE para a UI responder
         this._state.empresas = this._state.empresas.filter(e => e.id !== empresaId);
         this._state.users = this._state.users.filter(u => u.empresaId !== empresaId);
         this._state.contas = this._state.contas.filter(c => c.empresaId !== empresaId);
         
-        this._save();
+        // 2. Persistência Local (Offline-first)
+        this._saveLocalOnly();
         this._notify();
+
+        // 3. HARD DELETE CLOUD (Aguardando confirmação para evitar race conditions)
+        if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
+            try {
+                // Deletar dependências primeiro
+                await SupabaseSync.deleteBatch('users', 'empresaId', empresaId);
+                await SupabaseSync.deleteBatch('contas', 'empresaId', empresaId);
+                // Deletar a empresa
+                await SupabaseSync.deleteItem('empresas', empresaId);
+                console.log('✅ Empresa e dependências removidas da nuvem.');
+            } catch (err) {
+                console.error('❌ Falha na exclusão remota:', err);
+            }
+        }
+        
         return true;
     },
 
@@ -1576,19 +1625,16 @@ const Store = {
     // SISTEMA & DEV TOOLS (v5.0)
     // ==================
     systemHardReset() {
-        if (confirm('☢️ AVISO CRÍTICO: Isso apagará TODOS os dados de todas as empresas e clientes salvos localmente E NA NUVEM.\n\nDeseja prosseguir?')) {
-            // 1. Limpeza PROIBIDA na Nuvem
-            // (Comentado e bloqueado definitivamente a pedido do CEO - Segurança de Dados)
-            // if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
-            //     SupabaseSync.purgeAll() ...
-            // }
-
-            // 2. Limpar Apenas Local (Seguro)
-            console.log('🧹 Limpeza Local Ativada. O Banco de Dados na nuvem está blindado.');
-            localStorage.clear();
-            sessionStorage.clear();
-
-            // 3. Estado vazio
+        if (confirm('⚠️ PERIGO TOTAL: Isso apagará TODOS os dados locais e reiniciará o ambiente. Os usuários Master deverão ser recriados no login.\n\nDeseja prosseguir com o RESET?')) {
+            // Marca o reset para impedir o Anti-Overwrite de restaurar o cache "zumbi" no próximo load
+            localStorage.setItem('socialflow_last_reset', Date.now().toString());
+            
+            // Limpa tudo
+            localStorage.removeItem('socialflow_data');
+            localStorage.removeItem('socialflow_session');
+            localStorage.removeItem('socialflow_settings');
+            
+            // Estado vazio imediato
             this._state.users = [];
             this._state.contas = [];
             this._state.empresas = [];
@@ -1599,6 +1645,8 @@ const Store = {
             this._state.contaAtiva = null;
 
             this._notify();
+            console.warn('☢️ RESET DE FÁBRICA CONCLUÍDO.');
+            
             setTimeout(() => {
                 window.location.href = 'index.html';
                 window.location.reload();
