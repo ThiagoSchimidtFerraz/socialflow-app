@@ -56,7 +56,7 @@ export default async function handler(req, res) {
     
     res.status(200).json({
         uploadUrl: signedUrl,
-        fileUrl: `${PUBLIC_URL}/${uniqueFileName}`
+        publicUrl: `${PUBLIC_URL}/${uniqueFileName}`
     });
   } catch (error) {
     console.error('Erro ao gerar URL assinada:', error);
