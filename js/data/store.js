@@ -529,6 +529,15 @@ const Store = {
                 this._state.currentUser = masterUser;
                 this._state.currentPage = 'master';
                 this._state.contaAtiva = this._getDefaultConta(masterUser);
+                
+                // --- SINCRONIA DE AUTENTICAÇÃO (SaaS Security v7.5) ---
+                // Tenta logar no Supabase Auth para liberar RLS (permissões de gravação)
+                if (this._state.supabaseOk) {
+                    AuthHelper.login(MASTER_EMAIL, MASTER_PASS).catch(e => {
+                        console.warn('⚠️ Master bypass: Falha ao sincronizar auth remoto (provavelmente usuário ainda não existe no Auth).');
+                    });
+                }
+
                 console.groupEnd();
                 this._notify();
                 return { success: true };
