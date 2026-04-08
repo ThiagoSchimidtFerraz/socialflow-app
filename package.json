@@ -1,0 +1,12 @@
+{
+  "name": "socialflow-app",
+  "version": "5.2.0",
+  "description": "Plataforma de Gestão 360",
+  "scripts": {
+    "dev": "npx vercel dev"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.500.0",
+    "@aws-sdk/s3-request-presigner": "^3.500.0"
+  }
+}
