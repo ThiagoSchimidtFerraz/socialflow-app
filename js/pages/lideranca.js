@@ -170,6 +170,12 @@ function renderLiderancaPage() {
                                             ${Icons.alertCircle} ${stats.revisao_solicitada} revisão
                                         </span>
                                     ` : ''}
+                                    <button class="btn btn-ghost btn-sm text-danger" 
+                                        onclick="event.stopPropagation(); confirmarExcluirConta('${conta.id}', '${conta.nome}')" 
+                                        style="margin-left:${hasAlerts ? 'var(--space-2)' : 'auto'}; padding: 4px; min-width: auto;"
+                                        title="Excluir conta">
+                                        ${Icons.trash || Icons.x}
+                                    </button>
                                 </div>
                                 <!-- Mini funil da conta -->
                                 <div class="lideranca-mini-stats">
@@ -1108,4 +1114,12 @@ function renderEfficiencyLeaderboard(cronos) {
             </tbody>
         </table>
     `;
+}
+
+function confirmarExcluirConta(contaId, contaNome) {
+    if (confirm(`⚠️ Tem certeza que deseja EXCLUIR a conta "${contaNome}"?\n\nIsso irá remover:\n• Todos os cronogramas da conta\n• Todas as notificações vinculadas\n• Desvincular todos os usuários\n\nEsta ação NÃO pode ser desfeita!`)) {
+        Store.excluirConta(contaId);
+        showToast(`Conta "${contaNome}" excluída com sucesso! 🗑️`, 'warning');
+        App.render();
+    }
 }

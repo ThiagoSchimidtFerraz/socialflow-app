@@ -222,11 +222,11 @@ function renderAdminContas(contas) {
                                 <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); abrirModalEditarConta('${conta.id}')" title="Editar conta">
                                     ${Icons.edit} Editar
                                 </button>
-                                ${Store.getState().currentUser.role !== 'social_media' ? `
-                                    <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); confirmarExcluirConta('${conta.id}', '${conta.nome}')" title="Excluir conta">
-                                        ${Icons.trash || Icons.x} Excluir
-                                    </button>
-                                ` : ''}
+                                 ${(Store.getState().currentUser.role === 'master' || Store.getState().currentUser.role === 'admin' || Store.getState().currentUser.contasIds.includes(conta.id)) ? `
+                                     <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); confirmarExcluirConta('${conta.id}', '${conta.nome}')" title="Excluir conta">
+                                         ${Icons.trash || Icons.x} Excluir
+                                     </button>
+                                 ` : ''}
                             </div>
                         </div>
                     </div>
