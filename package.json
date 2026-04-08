@@ -1,6 +1,6 @@
 {
   "name": "socialflow-app",
-  "version": "5.2.0",
+  "version": "5.4.0",
   "description": "Plataforma de Gestão 360",
   "scripts": {
     "dev": "npx vercel dev"

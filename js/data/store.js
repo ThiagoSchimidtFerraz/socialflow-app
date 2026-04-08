@@ -127,24 +127,41 @@ const Store = {
         // 1. Tentar Supabase PRIMEIRO (Fonte da Verdade Cloud v5.1)
         if (supabaseOk) {
             const cloudData = await SupabaseSync.loadAll();
+            
+            // --- PROTEÇÃO ANTI-OVERWRITE MÁXIMA ---
+            const savedStr = localStorage.getItem('socialflow_data');
+            let localTemDados = false;
+            if (savedStr) {
+                try {
+                    const parsed = JSON.parse(savedStr);
+                    if ((parsed.users && parsed.users.length > 0) || (parsed.empresas && parsed.empresas.length > 0)) {
+                        localTemDados = true;
+                    }
+                } catch(e) {}
+            }
+
             if (cloudData === null) {
-                // Erro de rede ou timeout (CloudError)
                 cloudError = true;
-                console.warn('❌ Cloud Load Error: Bloqueando sobrescrita automática para sua segurança.');
-            } else if (cloudData && cloudData.users && cloudData.users.length > 0) {
-                console.log('☁️ Dados recuperados do Supabase.');
-                this._state.users = cloudData.users;
-                this._state.contas = cloudData.contas;
-                this._state.empresas = cloudData.empresas || [];
-                this._state.cronogramas = cloudData.cronogramas;
-                this._state.notificacoes = cloudData.notificacoes || [];
-                if (cloudData.saasConfig) this._state.saasConfig = cloudData.saasConfig;
-                loaded = true;
-                loadedFromCloud = true;
-                cloudError = false; 
+                console.warn('❌ Erro real na Nuvem (Timeout/CORS). Usaremos o cache local.');
             } else {
-                console.log('☁️ Banco na Nuvem Vazio: Pronto para novo plantio.');
-                cloudError = false;
+                const nuvemEstaVazia = (!cloudData.users || cloudData.users.length === 0) && (!cloudData.empresas || cloudData.empresas.length === 0);
+                
+                if (nuvemEstaVazia && localTemDados) {
+                    // O Supabase respondeu, MAS com array vazio. Causa provável: RLS ou Nova Conta sem Bypass.
+                    console.error('🛡️ ALERTA DE ANTI-OVERWRITE: O banco em nuvem retornou 0 registros, mas você possui dados locais! O sistema BLOQUEOU o overwite para salvar seus dados do Master.');
+                    cloudError = true; // Força ignorar a nuvem vazia e carregar de LocalStorage abaixo
+                } else {
+                    // Tudo certo, a nuvem tem dados OU a nuvem e o local estão ambos vazios.
+                    console.log(`☁️ Dados recuperados da nuvem e salvos no estado. Users: ${cloudData.users.length}`);
+                    this._state.users = cloudData.users || [];
+                    this._state.contas = cloudData.contas || [];
+                    this._state.empresas = cloudData.empresas || [];
+                    this._state.cronogramas = cloudData.cronogramas || [];
+                    this._state.notificacoes = cloudData.notificacoes || [];
+                    loaded = true;
+                    loadedFromCloud = true;
+                    cloudError = false;
+                }
             }
         }
 
@@ -427,7 +444,18 @@ const Store = {
                                   !this._isInitialLoading && 
                                   this._state.currentUser !== null;
 
+            // --- TRAVA DE SEGURANÇA CRÍTICA (v5.5 - THIAGO) ---
+            // Se tentarmos sincronizar um estado "vazio" (sem usuários ou contas) 
+            // mas o sistema NÃO foi identificado como um "Cold Start" legítimo, BLOQUEAMOS.
+            const hasData = this._state.users.length > 0 || this._state.contas.length > 0;
+            const isIntentionalEmpty = this._state.isMockData && !this._state.loadedFromCloud;
+
             if (canSyncToCloud) {
+                if (!hasData && !isIntentionalEmpty) {
+                    console.error('❌ SEGURANÇA BLOQUEADA: Tentativa de sincronizar estado vazio detectada. Abortando para evitar perda de dados.');
+                    return;
+                }
+
                 SupabaseSync.syncAll({
                     users: this._state.users,
                     contas: this._state.contas,
@@ -905,7 +933,7 @@ const Store = {
                     id: 'user_' + Date.now(),
                     nome: `Cliente da ${data.nome}`,
                     email: data.emailCliente,
-                    senha: null, // Gerenciado pelo Supabase Auth no fluxo real
+                    senha: '123', // Senha padrão para acesso inicial conforme indicado no Admin
                     role: 'cliente',
                     avatar: null,
                     criadoEm: new Date().toISOString(),
@@ -1549,16 +1577,14 @@ const Store = {
     // ==================
     systemHardReset() {
         if (confirm('☢️ AVISO CRÍTICO: Isso apagará TODOS os dados de todas as empresas e clientes salvos localmente E NA NUVEM.\n\nDeseja prosseguir?')) {
-            // 1. Limpar Nuvem (Supabase)
-            if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
-                SupabaseSync.purgeAll().then(() => {
-                    console.log('☁️ Nuvem limpa com sucesso.');
-                }).catch(err => {
-                    console.error('❌ Erro ao limpar nuvem:', err);
-                });
-            }
+            // 1. Limpeza PROIBIDA na Nuvem
+            // (Comentado e bloqueado definitivamente a pedido do CEO - Segurança de Dados)
+            // if (typeof SupabaseSync !== 'undefined' && SupabaseSync.isOnline()) {
+            //     SupabaseSync.purgeAll() ...
+            // }
 
-            // 2. Limpar Local
+            // 2. Limpar Apenas Local (Seguro)
+            console.log('🧹 Limpeza Local Ativada. O Banco de Dados na nuvem está blindado.');
             localStorage.clear();
             sessionStorage.clear();
 

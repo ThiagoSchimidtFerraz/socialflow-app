@@ -133,24 +133,8 @@ const SupabaseSync = {
      * Uso exclusivo do Master para começar do zero.
      */
     async purgeAll() {
-        if (!this.isOnline()) return false;
-        try {
-            const sb = getSupabase();
-            console.warn('💣 PURGE TOTAL: Limpando TODAS as tabelas do Supabase...');
-
-            // Ordem importa por causa de foreign keys
-            await sb.from('cronogramas').delete().neq('id', '__impossible__');
-            await sb.from('notificacoes').delete().neq('id', '__impossible__');
-            await sb.from('contas').delete().neq('id', '__impossible__');
-            await sb.from('users').delete().neq('id', '__impossible__');
-            await sb.from('empresas').delete().neq('id', '__impossible__');
-
-            console.log('✅ PURGE TOTAL concluído. Supabase está limpo.');
-            return true;
-        } catch (err) {
-            console.error('❌ Erro no purge:', err);
-            return false;
-        }
+        console.error('⛔ AÇÃO PROIBIDA: A exclusão em massa de dados (PURGE) foi desativada permanentemente por segurança corporativa.');
+        return false;
     },
 
     /**

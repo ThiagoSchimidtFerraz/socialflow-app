@@ -59,12 +59,16 @@ function renderAdminPage() {
                     <button class="tab ${adminTab === 'contas' ? 'active' : ''}" onclick="mudarAdminTab('contas')">
                         ${Icons.home} Contas de Clientes (${contas.length})
                     </button>
+                    <button class="tab ${adminTab === 'configuracoes' ? 'active' : ''}" onclick="mudarAdminTab('configuracoes')">
+                        ${Icons.settings || '⚙️'} Configurações de IA
+                    </button>
                 </div>
 
                 <div class="animate-fade-in" style="animation-delay:0.1s;">
                     ${adminTab === 'pendentes' && (user.role === 'admin' || user.role === 'master') ? renderAdminPendentes(pendentes) : ''}
                     ${adminTab === 'usuarios' && (user.role === 'admin' || user.role === 'master') ? renderAdminUsuarios(todosUsuarios) : ''}
                     ${adminTab === 'contas' ? renderAdminContas(contas) : ''}
+                    ${adminTab === 'configuracoes' ? renderAdminConfiguracoes() : ''}
                 </div>
             </div>
         </main>
@@ -209,22 +213,22 @@ function renderAdminContas(contas) {
                             <span style="font-size:12px; color:var(--gray-700); font-weight:500;">${conta.emailCliente}</span>
                         </div>
                         ` : ''}
-                        <div style="display:flex; gap:var(--space-6); padding-top:var(--space-3); border-top:1px solid var(--gray-100);">
+                        <div style="display:flex; align-items:flex-end; gap:var(--space-4); padding-top:var(--space-4); border-top:1px solid var(--gray-100);">
                             <div style="text-align:center;">
-                                <div style="font-size:var(--font-2xl); font-weight:800; color:var(--gray-900);">${cronogramasCount}</div>
-                                <div style="font-size:var(--font-xs); color:var(--gray-500);">Cronogramas</div>
+                                <div style="font-size:var(--font-xl); font-weight:800; color:var(--gray-900); line-height:1;">${cronogramasCount}</div>
+                                <div style="font-size:10px; color:var(--gray-500); text-transform:uppercase; margin-top:4px;">Cronos</div>
                             </div>
                             <div style="text-align:center;">
-                                <div style="font-size:var(--font-2xl); font-weight:800; color:var(--gray-900);">${usuariosCount}</div>
-                                <div style="font-size:var(--font-xs); color:var(--gray-500);">Membros</div>
+                                <div style="font-size:var(--font-xl); font-weight:800; color:var(--gray-900); line-height:1;">${usuariosCount}</div>
+                                <div style="font-size:10px; color:var(--gray-500); text-transform:uppercase; margin-top:4px;">Membros</div>
                             </div>
-                            <div style="margin-left:auto; display:flex; align-items:center; gap:var(--space-2); align-items:flex-end;">
-                                <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); abrirModalEditarConta('${conta.id}')" title="Editar conta">
-                                    ${Icons.edit} Editar
+                            <div style="margin-left:auto; display:flex; gap:var(--space-2);">
+                                <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); abrirModalEditarConta('${conta.id}')" title="Editar conta" style="padding:var(--space-2);">
+                                    ${Icons.edit}
                                 </button>
                                  ${(Store.getState().currentUser.role === 'master' || Store.getState().currentUser.role === 'admin' || Store.getState().currentUser.contasIds.includes(conta.id)) ? `
-                                     <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); confirmarExcluirConta('${conta.id}', '${conta.nome}')" title="Excluir conta">
-                                         ${Icons.trash || Icons.x} Excluir
+                                     <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); confirmarExcluirConta('${conta.id}', '${conta.nome}')" title="Excluir conta" style="padding:var(--space-2); background:var(--danger-50); color:var(--danger); border:none;">
+                                         ${Icons.trash || Icons.x}
                                      </button>
                                  ` : ''}
                             </div>
@@ -234,6 +238,57 @@ function renderAdminContas(contas) {
             }).join('')}
         </div>
     `;
+}
+
+function renderAdminConfiguracoes() {
+    const geminiKey = Store.getGeminiKey();
+    return `
+        <div class="card animate-fade-in" style="max-width:600px; padding:var(--space-6);">
+            <div style="display:flex; align-items:center; gap:var(--space-3); margin-bottom:var(--space-4);">
+                <div style="width:40px; height:40px; border-radius:var(--radius-md); background:var(--primary-100); color:var(--primary); display:flex; align-items:center; justify-content:center;">
+                    ${Icons.sparkles || '✨'}
+                </div>
+                <div>
+                    <h3 style="margin:0; font-size:var(--font-lg); color:var(--gray-900);">Configurações de Inteligência Artificial</h3>
+                    <p style="margin:2px 0 0; font-size:var(--font-xs); color:var(--gray-500);">Configure sua chave do Google Gemini para habilitar o assistente e notificações.</p>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:var(--space-6);">
+                <label class="form-label" for="admin-gemini-key">Gemini API Key</label>
+                <div style="display:flex; gap:var(--space-2);">
+                    <input type="password" id="admin-gemini-key" class="form-input" 
+                        value="${geminiKey}" placeholder="Insira sua chave AIzaSy..." 
+                        style="flex:1;">
+                    <button class="btn btn-primary" onclick="salvarConfigIAAdmin()">
+                        ${Icons.check} Salvar
+                    </button>
+                </div>
+                <p style="font-size:11px; color:var(--gray-400); margin-top:12px; line-height:1.5;">
+                    💡 <strong>Dica:</strong> A chave é salva apenas neste navegador. Para segurança, recomendamos usar uma chave com limites de cota. 
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--primary); text-decoration:none; font-weight:600;">Obter chave gratuita ↗</a>
+                </p>
+            </div>
+
+            <div style="background:var(--gray-50); border-radius:var(--radius-md); padding:var(--space-4); border:1px solid var(--gray-100);">
+                <h4 style="margin:0 0 var(--space-2); font-size:12px; color:var(--gray-700); font-weight:700;">Recursos Habilitados com a Chave:</h4>
+                <ul style="margin:0; padding-left:18px; font-size:12px; color:var(--gray-600); display:flex; flex-direction:column; gap:6px;">
+                    <li>Assistente de IA para geração de Copys (Chat)</li>
+                    <li>Redação automática de mensagens para WhatsApp</li>
+                    <li>Sugestões de temas e ganchos estratégicos</li>
+                </ul>
+            </div>
+        </div>
+    `;
+}
+
+function salvarConfigIAAdmin() {
+    const key = document.getElementById('admin-gemini-key').value.trim();
+    if (!key) {
+        if (!confirm('Deseja realmente remover a chave de IA? Os recursos de IA serão desativados.')) return;
+    }
+    Store.setGeminiKey(key);
+    showToast('Configurações de IA salvas com sucesso! 🚀', 'success');
 }
 
 // ---- Ações Admin ----

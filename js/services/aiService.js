@@ -161,13 +161,13 @@ Regras:
             } catch (error) {
                 console.warn('Erro API Gemini, recuando state:', error);
                 this._chatHistory.pop(); // Remove a mensagen "user" presa
-                return this.gerarMockChat(mensagemUser);
+                return `**Erro na Conexão IA** ⚠️\n\nNão consegui processar sua mensagem agora. Verifique se sua chave do Gemini ainda é válida em *Gestão > Configurações*.`;
             }
         }
 
         // Se não tem API KEY
         this._chatHistory.pop(); // Remove a mensagen "user" presa
-        return this.gerarMockChat(mensagemUser);
+        return `**Assistente IA desativado** 🤖\n\nOlá! Eu sou seu assistente estratégico, mas preciso de uma **Gemini API Key** configurada para poder "pensar" e te ajudar com as melhores estratégias.\n\n👉 [Clique aqui para configurar sua chave agora](javascript:Store.navigate('admin',{tab:'configuracoes'})) e comece a decolar! 🚀`;
     },
 
     gerarMockChat(mensagemUser) {
