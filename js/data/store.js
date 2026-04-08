@@ -118,159 +118,100 @@ const Store = {
     async init(supabaseOk = false) {
         this._isInitialLoading = true;
         this._state.supabaseOk = supabaseOk;
-        console.log('🛡️ Estado: Iniciando Hidratação de Dados (Offline-First)...');
+        console.log('🛡️ Estado: Iniciando Hidratação de Dados (Offline-First v7.5)...');
 
-        let loaded = false;
+        let loadedLocal = false;
         let loadedFromCloud = false;
-        let cloudError = false;
 
-        // 1. Tentar Supabase PRIMEIRO (Fonte da Verdade Cloud v5.1)
+        // 1. CARREGAR LOCAL PRIMEIRO (Velocidade e Segurança de Dados)
+        const saved = localStorage.getItem('socialflow_data');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                if (parsed.users && parsed.users.length > 0) {
+                    console.log('📦 Dados LOCAL recuperados (Fonte Primária).');
+                    this._state.users = parsed.users;
+                    this._state.contas = parsed.contas || [];
+                    this._state.empresas = parsed.empresas || [];
+                    this._state.cronogramas = parsed.cronogramas || [];
+                    this._state.notificacoes = parsed.notificacoes || [];
+                    loadedLocal = true;
+                }
+            } catch (err) {
+                console.error('❌ Erro ao ler LocalStorage:', err);
+            }
+        }
+
+        // 2. RESTAURAR SESSÃO (Essencial para permissões Cloud)
+        let sessionRestored = false;
+        const savedSession = localStorage.getItem('socialflow_session');
+        if (savedSession) {
+            try {
+                const { id, contaAtiva } = JSON.parse(savedSession);
+                const user = this._state.users.find(u => u.id === id);
+                if (user) {
+                    this._state.currentUser = user;
+                    this._state.contaAtiva = contaAtiva || this._getDefaultConta(user);
+                    this._state.currentPage = user.role === 'master' ? 'master' : (user.role === 'admin' ? 'lideranca' : 'dashboard');
+                    sessionRestored = true;
+                    console.log('🔑 Sessão restaurada:', user.nome);
+                }
+            } catch(e) {}
+        }
+
+        // 3. CARREGAR DA NUVEM (Sincronização)
         if (supabaseOk) {
+            // Tenta validar sessão oficial no Supabase se houver token
+            try {
+                const { data: { session } } = await getSupabase().auth.getSession();
+                if (session && session.user && !sessionRestored) {
+                    const user = this._state.users.find(u => u.id === session.user.id);
+                    if (user) {
+                        this._state.currentUser = user;
+                        sessionRestored = true;
+                    }
+                }
+            } catch(e) {}
+
             const cloudData = await SupabaseSync.loadAll();
             
-            // --- PROTEÇÃO ANTI-OVERWRITE MÁXIMA ---
-            const savedStr = localStorage.getItem('socialflow_data');
-            let localTemDados = false;
-            if (savedStr) {
-                try {
-                    const parsed = JSON.parse(savedStr);
-                    if ((parsed.users && parsed.users.length > 0) || (parsed.empresas && parsed.empresas.length > 0)) {
-                        localTemDados = true;
-                    }
-                } catch(e) {}
-            }
+            if (cloudData) {
+                const hasCloudData = (cloudData.users && cloudData.users.length > 0) || 
+                                    (cloudData.empresas && cloudData.empresas.length > 0);
 
-            if (cloudData === null) {
-                cloudError = true;
-                console.warn('❌ Erro real na Nuvem (Timeout/CORS). Usaremos o cache local.');
-            } else {
-                const nuvemEstaVazia = (!cloudData.users || cloudData.users.length === 0) && (!cloudData.empresas || cloudData.empresas.length === 0);
-                
-                if (nuvemEstaVazia && localTemDados) {
-                    // O Supabase respondeu, MAS com array vazio. Causa provável: RLS ou Nova Conta sem Bypass.
-                    console.error('🛡️ ALERTA DE ANTI-OVERWRITE: O banco em nuvem retornou 0 registros, mas você possui dados locais! O sistema BLOQUEOU o overwite para salvar seus dados do Master.');
-                    cloudError = true; // Força ignorar a nuvem vazia e carregar de LocalStorage abaixo
-                } else {
-                    // Tudo certo, a nuvem tem dados OU a nuvem e o local estão ambos vazios.
-                    console.log(`☁️ Dados recuperados da nuvem e salvos no estado. Users: ${cloudData.users.length}`);
-                    this._state.users = cloudData.users || [];
-                    this._state.contas = cloudData.contas || [];
-                    this._state.empresas = cloudData.empresas || [];
-                    this._state.cronogramas = cloudData.cronogramas || [];
-                    this._state.notificacoes = cloudData.notificacoes || [];
-                    loaded = true;
+                if (hasCloudData) {
+                    console.log('☁️ Sincronizando com a Nuvem (Cloud Update)...');
+                    // Mescla inteligente ou substituição se a nuvem tiver dados reais
+                    this._state.users = cloudData.users;
+                    this._state.contas = cloudData.contas;
+                    this._state.empresas = cloudData.empresas;
+                    this._state.cronogramas = cloudData.cronogramas;
+                    this._state.notificacoes = cloudData.notificacoes;
                     loadedFromCloud = true;
-                    cloudError = false;
+                } else if (loadedLocal) {
+                    console.warn('🛡️ Nuvem vazia ou bloqueada: Preservando dados locais do Master.');
                 }
             }
         }
 
-        // 2. Tentar localStorage como Fallback (Offline ou Supabase Vazio)
-        if (!loaded) {
-            const saved = localStorage.getItem('socialflow_data');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    const cronogramas = parsed.cronogramas || [];
-                    const isLegacy = cronogramas.length > 0 && !cronogramas[0].contaId;
-                    
-                    if (isLegacy || !parsed.users || !parsed.contas) {
-                        console.warn('⚠️ Dados locais legados ou corrompidos. Inicializando limpo.');
-                    } else {
-                        console.log('📦 Dados recuperados do LocalStorage (Fallback).');
-                        this._state.users = parsed.users;
-                        this._state.contas = parsed.contas;
-                        this._state.empresas = parsed.empresas || [];
-                        this._state.cronogramas = parsed.cronogramas;
-                        this._state.notificacoes = parsed.notificacoes || [];
-                        if (parsed.saasConfig) this._state.saasConfig = parsed.saasConfig;
-                        loaded = true;
-                    }
-                } catch (err) {
-                    console.error('❌ Erro ao ler LocalStorage:', err);
-                }
-            }
-        }
-
-        // 3. Fallback final: Sistema vazio (v7.0 — ZERO MOCK DATA)
-        if (!loaded) {
-            if (cloudError) {
-                console.log('🛡️ Falha na Rede + Cache Vazio: Sistema aguardando conexão com a nuvem.');
-            } else {
-                console.log('🌱 Cold Start: Sistema limpo, sem dados pré-carregados. Tudo será criado manualmente.');
-            }
-            // NÃO carrega dados de teste — sistema começa 100% vazio
+        if (!loadedLocal && !loadedFromCloud) {
+            console.log('🌱 Cold Start: Sistema limpo.');
             this._loadDefaults();
         }
 
-        // Migração e Polimento de Estado
+
+        // 4. Migração e Polimento de Estado
         this._state.cronogramas.forEach(c => {
             if (!c.mesReferencia && c.dataInicio) {
                 c.mesReferencia = c.dataInicio.substring(0, 7);
             }
         });
 
-        // v7.2: REMOVIDA lógica de reparo legado que injetava 'emp1' (Digital Growth) automaticamente. 
-        // Se um dado for órfão, ele permanece assim até ser corrigido manualmente.
-
-        // v7.0: NÃO re-injeta empresas automaticamente. Tudo é manual.
-
-        // --- INJEÇÃO DE SEGURANÇA FINAL (THIAGO FERRAZ) ---
-        // Acesso puro sem re-injetar dados apagados. Apenas garante contas persistentes.
-        this._state.cloudError = cloudError;
         this._state.loadedFromCloud = loadedFromCloud;
-        this._state.isMockData = !loaded;
+        this._state.isMockData = !loadedLocal && !loadedFromCloud;
 
-        if (!loadedFromCloud) {
-            // v7.2: NUNCA sincroniza com a nuvem durante o init. 
-            // O init deve apenas carregar. O sync acontecerá pós-login ou em ações do usuário.
-            this._saveLocalOnly();
-        } else {
-            this._saveLocalOnly(); 
-        }
-
+        this._saveLocalOnly(); 
         this._isInitialLoading = false;
-
-
-        // Verificar sessão nativa do Supabase
-        let sessionRestored = false;
-        if (supabaseOk) {
-            try {
-                const { data: { session } } = await getSupabase().auth.getSession();
-                if (session && session.user) {
-                    const user = this._state.users.find(u => u.id === session.user.id);
-                    if (user) {
-                        this._state.currentUser = user;
-                        this._state.currentPage = user.role === 'master' ? 'master' : (user.role === 'admin' ? 'lideranca' : 'dashboard');
-                        sessionRestored = true;
-                    }
-                }
-            } catch(e) {
-                console.warn('⚠️ Erro ao verificar sessão Supabase:', e);
-            }
-        }
-
-        // v7.0: RESTAURAR SESSÃO LOCAL (Fallback para logins que não passam pelo Supabase Auth)
-        if (!sessionRestored) {
-            const savedSession = localStorage.getItem('socialflow_session');
-            if (savedSession) {
-                try {
-                    const { id, contaAtiva } = JSON.parse(savedSession);
-                    const user = this._state.users.find(u => u.id === id);
-                    if (user) {
-                        console.log('🔒 Sessão restaurada do cache local:', user.nome);
-                        this._state.currentUser = user;
-                        this._state.contaAtiva = contaAtiva || this._getDefaultConta(user);
-                        this._state.currentPage = user.role === 'master' ? 'master' : (user.role === 'admin' ? 'lideranca' : 'dashboard');
-                        sessionRestored = true;
-                    } else {
-                        localStorage.removeItem('socialflow_session');
-                    }
-                } catch(e) {
-                    localStorage.removeItem('socialflow_session');
-                }
-            }
-        }
 
         // Listener Global para Auth State (Supabase)
         if (supabaseOk) {
