@@ -283,6 +283,13 @@ const Store = {
                         this._state.contaAtiva = this._getDefaultConta(user);
                     }
                 } else if (event === 'SIGNED_OUT') {
+                    // --- PROTEÇÃO MASTER (v7.6) ---
+                    // Não deslogar automaticamente se for Master, pois o Master tem persistência local reforçada
+                    if (this._state.currentUser && this._state.currentUser.role === 'master') {
+                        console.log('🛡️ Mantendo sessão Master ativa apesar do sinal de logout remoto.');
+                        return;
+                    }
+                    
                     this._state.currentUser = null;
                     this._state.currentPage = 'login';
                     localStorage.removeItem('socialflow_session');
