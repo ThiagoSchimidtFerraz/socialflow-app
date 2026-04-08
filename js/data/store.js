@@ -210,9 +210,8 @@ const Store = {
             }
         });
 
-        // Garantir que dados legados tenham empresaId (Digital Growth por padrão)
-        this._state.users.forEach(u => { if (!u.empresaId) u.empresaId = 'emp1'; });
-        this._state.contas.forEach(c => { if (!c.empresaId) c.empresaId = 'emp1'; });
+        // v7.2: REMOVIDA lógica de reparo legado que injetava 'emp1' (Digital Growth) automaticamente. 
+        // Se um dado for órfão, ele permanece assim até ser corrigido manualmente.
 
         // v7.0: NÃO re-injeta empresas automaticamente. Tudo é manual.
 
