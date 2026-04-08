@@ -451,33 +451,11 @@ const Store = {
                                   !this._isInitialLoading && 
                                   this._state.currentUser !== null;
 
-            // --- TRAVA DE SEGURANÇA FINAL (ANTI-OVERWRITE v7.0) ---
-            // Se a nuvem retornar vazio MAS o local tem dados, verificamos se foi uma limpeza intencional
-            if (this._state.empresas.length === 0 && localData.empresas.length > 0) {
-                const lastReset = localStorage.getItem('socialflow_last_reset');
-                // Se não houve um reset manual recente, protegemos o dado local contra falha de rede/nuvem vazia
-                if (!lastReset || (Date.now() - parseInt(lastReset)) > 5000) {
-                    console.warn('🛡️ ALERTA DE ANTI-OVERWRITE: Bloqueado overwite para salvar os dados locais!');
-                    this._state.users = localData.users;
-                    this._state.contas = localData.contas;
-                    this._state.empresas = localData.empresas;
-                    this._state.cronogramas = localData.cronogramas;
-                    this._state.notificacoes = localData.notificacoes;
-                }
-            }
+            // --- TRAVA DE SEGURANÇA CRÍTICA ---
+            // Só sincroniza com a nuvem se houver dados E houver usuário logado
+            const hasData = this._state.users.length > 0 || this._state.empresas.length > 0;
 
-            // --- TRAVA DE SEGURANÇA CRÍTICA (v5.5 - THIAGO) ---
-            // Se tentarmos sincronizar um estado "vazio" (sem usuários ou contas) 
-            // mas o sistema NÃO foi identificado como um "Cold Start" legítimo, BLOQUEAMOS.
-            const hasData = this._state.users.length > 0 || this._state.contas.length > 0;
-            const isIntentionalEmpty = this._state.isMockData && !this._state.loadedFromCloud;
-
-            if (canSyncToCloud) {
-                if (!hasData && !isIntentionalEmpty) {
-                    console.error('❌ SEGURANÇA BLOQUEADA: Tentativa de sincronizar estado vazio detectada. Abortando para evitar perda de dados.');
-                    return;
-                }
-
+            if (canSyncToCloud && hasData) {
                 SupabaseSync.syncAll({
                     users: this._state.users,
                     contas: this._state.contas,
