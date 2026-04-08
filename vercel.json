@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/master",
+      "destination": "/master.html"
+    },
+    {
+      "source": "/portal",
+      "destination": "/portal-cliente.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
